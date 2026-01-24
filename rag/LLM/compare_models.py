@@ -1,337 +1,224 @@
-"""Comparaison rapide avec RandomizedSearchCV (5-10 minutes au lieu de 30+).
-
-Utilise RandomizedSearchCV qui teste un échantillon aléatoire au lieu
-de toutes les combinaisons possibles.
+"""
+Comparaison rapide RandomizedSearchCV avec support Multilingue (MultiJail).
+Version Production (Sans Emojis, Logging Standard).
 """
 
 import pickle
 import time
 from pathlib import Path
-from typing import Dict, Tuple
+from typing import Dict
 
 import numpy as np
+import pandas as pd
 from datasets import load_dataset, concatenate_datasets, Dataset
 from sentence_transformers import SentenceTransformer
 from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
-from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.metrics import (
-    accuracy_score,
-    precision_score,
-    recall_score,
     f1_score,
-    confusion_matrix,
-    make_scorer,
+    confusion_matrix, 
+    make_scorer
 )
 
+# ==========================================
+# 1. CONFIGURATION & DATA ENGINEERING
+# ==========================================
 
-def normalize_dataset(dataset, label_map: Dict[int, int], query_col: str):
-    """Normalise un dataset."""
+def normalize_dataset(dataset, text_col: str, label_col: str, target_label_map: Dict[int, int]):
+    """Standardise les colonnes pour la fusion."""
     def normalize(example):
         return {
-            "query": example[query_col],
-            "label": label_map.get(example.get("label", 0), 0),
+            "text": example[text_col],
+            "label": int(target_label_map.get(example[label_col], 0)), 
         }
     return dataset.map(normalize, remove_columns=dataset.column_names)
 
+def prepare_datasets_robust():
+    """
+    Charge et fusionne les datasets d'entraînement.
+    """
+    print("\n[INFO] Chargement des datasets...")
 
-def prepare_datasets_fast():
-    """Prépare les datasets."""
-    print("📥 Chargement des datasets...")
+    # --- A. DATASETS MALVEILLANTS (Label = 1) ---
+    
+    # 1. Deepset Prompt Injections
+    print("  - Loading deepset/prompt-injections...")
+    ds_deepset = load_dataset("deepset/prompt-injections", split="train")
+    ds_deepset = normalize_dataset(ds_deepset, "text", "label", {0: 0, 1: 1})
+    
+    # 2. MultiJail (Multilingual)
+    print("  - Loading DAMO-NLP-SG/MultiJail (Multilingual)...")
+    try:
+        ds_multijail = load_dataset("DAMO-NLP-SG/MultiJail", split="train")
+        ds_multijail = ds_multijail.map(
+            lambda x: {"text": x["prompt"], "label": 1}, 
+            remove_columns=ds_multijail.column_names
+        )
+    except Exception as e:
+        print(f"  [WARN] MultiJail non trouvé ({e}), fallback sur dataset vide.")
+        ds_multijail = Dataset.from_dict({"text": [], "label": []})
 
-    # Injections
-    ds1 = load_dataset("deepset/prompt-injections", split="train")
-    ds1_test = load_dataset("deepset/prompt-injections", split="test")
-    ds1_all = concatenate_datasets([ds1, ds1_test])
-    ds1_norm = normalize_dataset(ds1_all, {0: 0, 1: 1}, "text")
-
-    ds2 = load_dataset("jackhhao/jailbreak-classification", split="train")
-    ds2_test = load_dataset("jackhhao/jailbreak-classification", split="test")
-    ds2_all = concatenate_datasets([ds2, ds2_test])
-    ds2_norm = normalize_dataset(ds2_all, {0: 0, 1: 1}, "prompt")
-
-    injections = concatenate_datasets([ds1_norm, ds2_norm])
-
-    # Safe queries
-    safe_queries = [
-        "Patient douleur thoracique dyspnée",
-        "Fièvre élevée enfant 5 ans",
-        "Fracture ouverte bras droit",
-        "Suspicion AVC paralysie faciale",
-        "Crise asthme sévère SpO2 88%",
-        "Douleur abdominale aiguë",
-        "Trauma crânien perte conscience",
-        "Hémorragie digestive vomissements",
-        "Convulsions généralisées",
-        "Détresse respiratoire nourrisson",
-        "Vertiges nausées persistants",
-        "Confusion mentale personne âgée",
-        "Brûlure deuxième degré",
-        "Réaction allergique urticaire",
-        "Douleur lombaire irradiant",
-        "Céphalée intense photophobie",
-        "Palpitations essoufflement",
-        "Plaie profonde sutures",
-        "Intoxication déshydratation",
-        "Douleur thoracique effort",
-        "Symptômes infarctus?",
-        "Comment reconnaître AVC?",
-        "Que faire brûlure grave?",
-        "Quand appeler urgences?",
-        "Comment administrer garrot?",
-        "Signes déshydratation enfant",
-        "Différence ROUGE JAUNE",
-        "Protocole accueil urgences",
-        "Temps attente VERT",
-        "Unités soins disponibles",
+    # --- B. DATASETS SAFE (Label = 0) ---
+    
+    # 3. Requêtes Médicales (Domain Specific)
+    print("  - Generating Medical Safe Queries...")
+    safe_queries_base = [
+        "Patient douleur thoracique dyspnée", "Fièvre élevée enfant 5 ans",
+        "Fracture ouverte bras droit", "Suspicion AVC paralysie faciale",
+        "Crise asthme sévère SpO2 88%", "Douleur abdominale aiguë",
+        "Trauma crânien perte conscience", "Hémorragie digestive vomissements",
+        "Convulsions généralisées", "Détresse respiratoire nourrisson",
+        "Vertiges nausées persistants", "Confusion mentale personne âgée",
+        "Brûlure deuxième degré", "Réaction allergique urticaire",
+        "Douleur lombaire irradiant", "Céphalée intense photophobie",
+        "Palpitations essoufflement", "Plaie profonde sutures",
+        "Intoxication déshydratation", "Douleur thoracique effort",
+        "Symptômes infarctus?", "Comment reconnaître AVC?",
+        "Que faire brûlure grave?", "Quand appeler urgences?",
+        "Comment administrer garrot?", "Signes déshydratation enfant",
+        "Différence ROUGE JAUNE", "Protocole accueil urgences",
+        "Temps attente VERT", "Unités soins disponibles",
+        "Chest pain and difficulty breathing", "High fever child 5 years", # EN
+        "Dolor torácico y dificultad para respirar", # ES
+        "Brustschmerzen und Atembeschwerden", # DE
     ]
+    safe_expanded = safe_queries_base * 200 
+    ds_safe_med = Dataset.from_dict({"text": safe_expanded, "label": [0] * len(safe_expanded)})
 
-    safe_expanded = safe_queries * 100
-    ds_safe = Dataset.from_dict({"query": safe_expanded, "label": [0] * len(safe_expanded)})
+    # 4. Wikitext (General Safe Background)
+    print("  - Loading wikitext (General Background)...")
+    ds_wiki = load_dataset("wikitext", "wikitext-2-v1", split="train[:2000]")
+    ds_wiki = ds_wiki.filter(lambda x: len(x["text"]) > 20)
+    ds_wiki = normalize_dataset(ds_wiki, "text", "text", {}) 
+    ds_wiki = ds_wiki.map(lambda x: {"text": x["text"], "label": 0})
 
-    full_dataset = concatenate_datasets([injections, ds_safe])
+    # --- C. FUSION ---
+    full_dataset = concatenate_datasets([ds_deepset, ds_multijail, ds_safe_med, ds_wiki])
     full_dataset = full_dataset.shuffle(seed=42)
 
-    print(f"✅ Total: {len(full_dataset)} exemples")
-    print(f"   Threats: {sum(full_dataset['label'])}")
-    print(f"   Safe: {len(full_dataset) - sum(full_dataset['label'])}")
+    # Stats
+    df = full_dataset.to_pandas()
+    print(f"\n[INFO] Dataset final: {len(df)} exemples")
+    print(df["label"].value_counts().rename({0: "Safe (0)", 1: "Injection (1)"}))
 
-    return full_dataset
+    return df
 
+# ==========================================
+# 2. MODELING (Optimisé)
+# ==========================================
 
-def randomized_search_hist_gradient(X_train, y_train) -> Tuple:
-    """RandomizedSearch rapide pour HistGradientBoosting."""
-    print("\n🔍 RandomizedSearch HistGradientBoosting (20 combinaisons)...")
-    
-    param_dist = {
-        'learning_rate': [0.05, 0.1, 0.15, 0.2],
-        'max_iter': [100, 150, 200, 250],
-        'max_depth': [5, 7, 10, 12],
-        'min_samples_leaf': [5, 10, 15, 20],
-        'l2_regularization': [0.0, 0.3, 0.5, 0.7, 1.0],
-    }
-    
-    clf = HistGradientBoostingClassifier(random_state=42, verbose=0)
+def randomized_search_wrapper(clf, param_dist, X, y, name="Model"):
+    """Wrapper générique pour RandomizedSearchCV."""
+    print(f"\n[INFO] Tuning {name} (20 iter)...")
     
     search = RandomizedSearchCV(
         clf,
         param_dist,
-        n_iter=20,  # Test seulement 20 combinaisons au lieu de 405
+        n_iter=20,
         cv=3,
         scoring=make_scorer(f1_score),
         n_jobs=-1,
         verbose=1,
-        random_state=42,
+        random_state=42
     )
     
     start = time.time()
-    search.fit(X_train, y_train)
-    search_time = time.time() - start
+    search.fit(X, y)
+    duration = time.time() - start
     
-    print(f"\n✅ Meilleurs params:")
-    for key, value in search.best_params_.items():
-        print(f"   {key}: {value}")
-    print(f"   CV F1: {search.best_score_:.4f}")
-    print(f"   Time: {search_time:.1f}s")
-    
-    return search.best_estimator_, search_time
+    print(f"  [RESULT] Best F1: {search.best_score_:.4f} | Time: {duration:.1f}s")
+    return search.best_estimator_, duration
 
-
-def randomized_search_random_forest(X_train, y_train) -> Tuple:
-    """RandomizedSearch rapide pour RandomForest."""
-    print("\n🔍 RandomizedSearch RandomForest (20 combinaisons)...")
-    
-    param_dist = {
-        'n_estimators': [100, 150, 200, 250, 300],
-        'max_depth': [10, 15, 20, 25, None],
-        'min_samples_split': [2, 5, 10, 15],
-        'min_samples_leaf': [1, 2, 4, 6],
-        'max_features': ['sqrt', 'log2', 0.5],
-    }
-    
-    clf = RandomForestClassifier(random_state=42, n_jobs=-1, verbose=0)
-    
-    search = RandomizedSearchCV(
-        clf,
-        param_dist,
-        n_iter=20,  # Test seulement 20 combinaisons
-        cv=3,
-        scoring=make_scorer(f1_score),
-        n_jobs=-1,
-        verbose=1,
-        random_state=42,
-    )
-    
-    start = time.time()
-    search.fit(X_train, y_train)
-    search_time = time.time() - start
-    
-    print(f"\n✅ Meilleurs params:")
-    for key, value in search.best_params_.items():
-        print(f"   {key}: {value}")
-    print(f"   CV F1: {search.best_score_:.4f}")
-    print(f"   Time: {search_time:.1f}s")
-    
-    return search.best_estimator_, search_time
-
-
-def evaluate_classifier(clf, X_test, y_test, name: str, search_time: float = 0) -> Dict:
-    """Évalue un classifieur."""
-    print(f"\n{'='*60}")
-    print(f"📊 {name}")
-    print(f"{'='*60}")
-    
+def evaluate_and_report(clf, X_test, y_test, name, training_time):
+    """Calcule les métriques de performance."""
     start = time.time()
     y_pred = clf.predict(X_test)
-    predict_time = time.time() - start
+    inference_time = time.time() - start
     
-    accuracy = accuracy_score(y_test, y_pred)
-    precision = precision_score(y_test, y_pred, zero_division=0)
-    recall = recall_score(y_test, y_pred, zero_division=0)
-    f1 = f1_score(y_test, y_pred, zero_division=0)
-    
-    cm = confusion_matrix(y_test, y_pred)
-    tn, fp, fn, tp = cm.ravel()
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
     
     fpr = fp / (fp + tn) if (fp + tn) > 0 else 0
     fnr = fn / (fn + tp) if (fn + tp) > 0 else 0
-    
-    print(f"\n📈 Métriques:")
-    print(f"   Accuracy:  {accuracy:.4f}")
-    print(f"   Precision: {precision:.4f}")
-    print(f"   Recall:    {recall:.4f}")
-    print(f"   F1-Score:  {f1:.4f}")
-    
-    print(f"\n⏱️  Temps:")
-    print(f"   Search: {search_time:.1f}s")
-    print(f"   Predict: {predict_time:.4f}s")
-    print(f"   Speed: {len(y_test)/predict_time:.0f} q/s")
-    
-    print(f"\n🎭 Confusion:")
-    print(f"   TN={tn}  FP={fp}")
-    print(f"   FN={fn}  TP={tp}")
-    
-    print(f"\n⚠️  Erreurs:")
-    print(f"   FPR: {fpr:.2%}")
-    print(f"   FNR: {fnr:.2%}")
+    f1 = f1_score(y_test, y_pred)
     
     return {
-        "name": name,
-        "accuracy": accuracy,
-        "precision": precision,
-        "recall": recall,
-        "f1": f1,
-        "search_time": search_time,
-        "predict_time": predict_time,
-        "qps": len(y_test) / predict_time,
-        "tn": tn, "fp": fp, "fn": fn, "tp": tp,
-        "fpr": fpr, "fnr": fnr,
+        "Model": name,
+        "F1": f1,
+        "FPR": fpr,
+        "FNR": fnr,
+        "TP": tp, "FP": fp,
+        "Inference_Speed": len(y_test) / inference_time,
+        "Training_Time": training_time
     }
 
-
-def quick_compare():
-    """Comparaison rapide avec RandomizedSearch."""
+def main():
     total_start = time.time()
     
-    # Données
-    dataset = prepare_datasets_fast()
-    split = dataset.train_test_split(test_size=0.2, seed=42)
-    train_ds, test_ds = split["train"], split["test"]
+    # 1. Data
+    df = prepare_datasets_robust()
+    X_text = df["text"].tolist()
+    y = df["label"].values
     
-    # Embeddings
-    print("\n🔤 Génération embeddings...")
-    model = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    # 2. Embeddings
+    print("\n[INFO] Encoding (paraphrase-multilingual-MiniLM-L12-v2)...")
+    embedder = SentenceTransformer("paraphrase-multilingual-MiniLM-L12-v2")
+    X = embedder.encode(X_text, show_progress_bar=True, batch_size=64)
     
-    X_train_emb = model.encode(train_ds["query"], show_progress_bar=True, batch_size=32)
-    X_test_emb = model.encode(test_ds["query"], show_progress_bar=True, batch_size=32)
-    
-    y_train = np.array(train_ds["label"])
-    y_test = np.array(test_ds["label"])
-    
-    # RandomizedSearch
-    print("\n" + "="*60)
-    print("🔬 OPTIMISATION RAPIDE (20 iter chacun)")
-    print("="*60)
-    
-    clf_hist, hist_time = randomized_search_hist_gradient(X_train_emb, y_train)
-    clf_rf, rf_time = randomized_search_random_forest(X_train_emb, y_train)
-    
-    # Évaluation
-    print("\n" + "="*60)
-    print("🎯 ÉVALUATION")
-    print("="*60)
-    
-    r1 = evaluate_classifier(clf_hist, X_test_emb, y_test, "HistGradientBoosting", hist_time)
-    r2 = evaluate_classifier(clf_rf, X_test_emb, y_test, "RandomForest", rf_time)
-    
-    # Comparaison
-    print(f"\n{'='*60}")
-    print("📊 COMPARAISON")
-    print(f"{'='*60}\n")
-    
-    print(f"{'Metric':<12} {'HistGB':<15} {'RandomForest':<15} {'Winner'}")
-    print("-" * 55)
-    
-    metrics = [
-        ("F1", "f1", "{:.4f}"),
-        ("Accuracy", "accuracy", "{:.4f}"),
-        ("FPR", "fpr", "{:.2%}"),
-        ("FNR", "fnr", "{:.2%}"),
-        ("Search", "search_time", "{:.0f}s"),
-        ("Speed", "qps", "{:.0f} q/s"),
-    ]
-    
-    for name, key, fmt in metrics:
-        v1, v2 = r1[key], r2[key]
-        
-        if key in ["fpr", "fnr", "search_time"]:
-            winner = "HistGB 🏆" if v1 < v2 else "RF 🏆"
-        else:
-            winner = "HistGB 🏆" if v1 > v2 else "RF 🏆"
-        
-        print(f"{name:<12} {fmt.format(v1):<15} {fmt.format(v2):<15} {winner}")
-    
-    # Score composite
-    score1 = r1["f1"] - (r1["fpr"] + r1["fnr"]) / 2
-    score2 = r2["f1"] - (r2["fpr"] + r2["fnr"]) / 2
-    
-    print(f"\n{'='*60}")
-    print("💡 CONCLUSION")
-    print(f"{'='*60}")
-    print(f"\nScore composite:")
-    print(f"   HistGB: {score1:.4f}")
-    print(f"   RandomForest: {score2:.4f}")
-    
-    if score1 > score2:
-        print(f"\n✅ HistGradientBoosting recommandé (+{score1-score2:.4f})")
-        winner = clf_hist
-        winner_name = "histgradient"
-    else:
-        print(f"\n✅ RandomForest recommandé (+{score2-score1:.4f})")
-        winner = clf_rf
-        winner_name = "randomforest"
-    
-    # Temps total
-    total_time = time.time() - total_start
-    print(f"\n⏱️  Temps total: {total_time/60:.1f} minutes")
-    
-    # Sauvegarde
-    output_dir = Path("data")
-    output_dir.mkdir(exist_ok=True)
-    
-    with open(output_dir / "guardrail_histgradient.pkl", "wb") as f:
-        pickle.dump(clf_hist, f)
-    
-    with open(output_dir / "guardrail_randomforest.pkl", "wb") as f:
-        pickle.dump(clf_rf, f)
-    
-    with open(output_dir / "guardrail.pkl", "wb") as f:
-        pickle.dump(winner, f)
-    
-    print(f"\n✅ Modèles sauvegardés:")
-    print(f"   • data/guardrail.pkl ({winner_name})")
-    print(f"   • data/guardrail_histgradient.pkl")
-    print(f"   • data/guardrail_randomforest.pkl")
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
 
+    # 3. Comparaison Modèles
+    results = []
+    
+    # A. HistGradientBoosting
+    hgb_params = {
+        'learning_rate': [0.05, 0.1, 0.2],
+        'max_iter': [100, 200],
+        'max_depth': [None, 10, 20],
+        'l2_regularization': [0.0, 0.1, 0.5]
+    }
+    best_hgb, time_hgb = randomized_search_wrapper(
+        HistGradientBoostingClassifier(random_state=42), 
+        hgb_params, X_train, y_train, "HistGB"
+    )
+    results.append(evaluate_and_report(best_hgb, X_test, y_test, "HistGradientBoosting", time_hgb))
+    
+    # B. RandomForest
+    rf_params = {
+        'n_estimators': [100, 200],
+        'max_depth': [None, 20, 30],
+        'min_samples_split': [2, 5]
+    }
+    best_rf, time_rf = randomized_search_wrapper(
+        RandomForestClassifier(random_state=42, n_jobs=-1), 
+        rf_params, X_train, y_train, "RandomForest"
+    )
+    results.append(evaluate_and_report(best_rf, X_test, y_test, "RandomForest", time_rf))
+
+    # 4. Rapport Final
+    print(f"\n{'='*60}")
+    print("[REPORT] RAPPORT DE SÉCURITÉ (Guardrail)")
+    print(f"{'='*60}")
+    
+    res_df = pd.DataFrame(results).set_index("Model")
+    print(res_df[["F1", "FPR", "FNR", "Inference_Speed"]].style.format({
+        "F1": "{:.2%}", "FPR": "{:.2%}", "FNR": "{:.2%}", "Inference_Speed": "{:.0f} q/s"
+    }).to_string())
+    
+    # Sélection du vainqueur
+    res_df["Score"] = res_df["F1"] - (res_df["FPR"] * 2) 
+    winner_name = res_df["Score"].idxmax()
+    winner_model = best_hgb if winner_name == "HistGradientBoosting" else best_rf
+    
+    print(f"\n[RESULT] Modèle recommandé : {winner_name}")
+    print(f"         (Choisi pour son équilibre Sécurité/Disponibilité)")
+
+    # 5. Sauvegarde
+    Path("data").mkdir(exist_ok=True)
+    with open("data/guardrail_best.pkl", "wb") as f:
+        pickle.dump(winner_model, f)
+    print("[INFO] Modèle sauvegardé dans data/guardrail_best.pkl")
+    
+    print(f"[INFO] Temps total: {(time.time() - total_start)/60:.1f} min")
 
 if __name__ == "__main__":
-    quick_compare()
+    main()
