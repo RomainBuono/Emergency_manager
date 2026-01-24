@@ -1,0 +1,29 @@
+# --- Environnement Virtuel ---
+.venvProjetLLM/
+venv/
+ENV/
+bin/
+lib/
+include/
+
+# --- Fichiers de Configuration Sensibles ---
+.env
+*.env
+
+# --- Cache Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# --- Stockage Local / Logs ---
+storage/data_regle/*.index
+storage/data_regle/*.pkl
+*.log
+
+# --- Système et IDE ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

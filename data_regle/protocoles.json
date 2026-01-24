@@ -1,0 +1,457 @@
+[
+  {
+    "id": "proto_sca",
+    "pathologie": "Syndrome Coronarien Aigu",
+    "symptomes": ["douleur thoracique", "oppression", "irradiation bras gauche", "dyspnée"],
+    "gravite": "ROUGE",
+    "unite_cible": "Cardiologie"
+  },
+  {
+    "id": "proto_avc",
+    "pathologie": "Accident Vasculaire Cérébral",
+    "symptomes": ["paralysie faciale", "trouble parole", "déficit moteur", "hémiplégie"],
+    "gravite": "ROUGE",
+    "unite_cible": "Neurologie"
+  },
+  {
+    "id": "proto_detresse_respi",
+    "pathologie": "Détresse Respiratoire Aiguë",
+    "symptomes": ["dyspnée sévère", "cyanose", "SpO2<90%", "tirage"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_choc_anaphylactique",
+    "pathologie": "Choc Anaphylactique",
+    "symptomes": ["œdème de Quincke", "bronchospasme", "hypotension", "urticaire"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_polytraumatisme",
+    "pathologie": "Polytraumatisme",
+    "symptomes": ["trauma multiple", "instabilité hémodynamique", "choc"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_hemorragie_digestive",
+    "pathologie": "Hémorragie Digestive Haute",
+    "symptomes": ["hématémèse", "méléna", "hypotension", "pâleur"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_convulsions",
+    "pathologie": "État de Mal Convulsif",
+    "symptomes": ["convulsions prolongées", "crise répétée", "perte conscience"],
+    "gravite": "ROUGE",
+    "unite_cible": "Neurologie"
+  },
+  {
+    "id": "proto_coma",
+    "pathologie": "Coma",
+    "symptomes": ["Glasgow<8", "trouble conscience", "pas de réponse"],
+    "gravite": "ROUGE",
+    "unite_cible": "Neurologie"
+  },
+  {
+    "id": "proto_brulure_grave",
+    "pathologie": "Brûlure Grave",
+    "symptomes": ["brûlure étendue", "inhalation fumée", "choc"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_choc_septique",
+    "pathologie": "Choc Septique",
+    "symptomes": ["sepsis", "hypotension", "marbrures", "fièvre"],
+    "gravite": "ROUGE",
+    "unite_cible": "Soins Critiques"
+  },
+  {
+    "id": "proto_fracture_ouverte",
+    "pathologie": "Fracture Ouverte",
+    "symptomes": ["fracture", "plaie", "exposition osseuse"],
+    "gravite": "JAUNE",
+    "unite_cible": "Orthopédie"
+  },
+  {
+    "id": "proto_colique_nephretique",
+    "pathologie": "Colique Néphrétique Compliquée",
+    "symptomes": ["douleur lombaire", "fièvre", "anurie"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_appendicite",
+    "pathologie": "Appendicite Aiguë",
+    "symptomes": ["douleur FID", "défense", "fièvre"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_cholecystite",
+    "pathologie": "Cholécystite Aiguë",
+    "symptomes": ["douleur hypochondre droit", "Murphy positif", "fièvre"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_pneumothorax",
+    "pathologie": "Pneumothorax",
+    "symptomes": ["dyspnée", "douleur thoracique", "abolition murmure vésiculaire"],
+    "gravite": "JAUNE",
+    "unite_cible": "Pneumologie"
+  },
+  {
+    "id": "proto_asthme_severe",
+    "pathologie": "Crise d'Asthme Sévère",
+    "symptomes": ["dyspnée sifflante", "impossibilité parler", "SpO2<92%"],
+    "gravite": "JAUNE",
+    "unite_cible": "Pneumologie"
+  },
+  {
+    "id": "proto_luxation",
+    "pathologie": "Luxation",
+    "symptomes": ["déformation articulaire", "douleur intense", "impotence"],
+    "gravite": "JAUNE",
+    "unite_cible": "Orthopédie"
+  },
+  {
+    "id": "proto_pancreatite",
+    "pathologie": "Pancréatite Aiguë",
+    "symptomes": ["douleur épigastrique", "vomissements", "défense"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_pyelonephrite",
+    "pathologie": "Pyélonéphrite",
+    "symptomes": ["douleur lombaire", "fièvre élevée", "frissons"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_oedeme_aigu_poumon",
+    "pathologie": "Œdème Aigu du Poumon",
+    "symptomes": ["dyspnée orthopnée", "râles crépitants", "expectoration rosée"],
+    "gravite": "JAUNE",
+    "unite_cible": "Cardiologie"
+  },
+  {
+    "id": "proto_fibrillation_atriale",
+    "pathologie": "Fibrillation Atriale Rapide",
+    "symptomes": ["palpitations", "dyspnée", "pouls irrégulier"],
+    "gravite": "JAUNE",
+    "unite_cible": "Cardiologie"
+  },
+  {
+    "id": "proto_entorse_grave",
+    "pathologie": "Entorse Grave",
+    "symptomes": ["traumatisme articulaire", "œdème important", "douleur vive"],
+    "gravite": "JAUNE",
+    "unite_cible": "Orthopédie"
+  },
+  {
+    "id": "proto_plaie_profonde",
+    "pathologie": "Plaie Profonde",
+    "symptomes": ["plaie étendue", "saignement actif", "atteinte structure"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_obstruction_intestinale",
+    "pathologie": "Occlusion Intestinale",
+    "symptomes": ["douleur abdominale", "vomissements", "arrêt des matières"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_geu",
+    "pathologie": "Grossesse Extra-Utérine",
+    "symptomes": ["douleur pelvienne", "métrorragies", "retard règles"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_retention_aigue_urine",
+    "pathologie": "Rétention Aiguë d'Urine",
+    "symptomes": ["globe vésical", "impossibilité uriner", "douleur sus-pubienne"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_epistaxis",
+    "pathologie": "Épistaxis Abondante",
+    "symptomes": ["saignement nasal", "déglutition sang", "déglobulisation"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_torsion_testicule",
+    "pathologie": "Torsion du Testicule",
+    "symptomes": ["douleur scrotale aiguë", "nausées", "érythème scrotal"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_decompensation_cardiaque",
+    "pathologie": "Décompensation Cardiaque",
+    "symptomes": ["dyspnée", "œdèmes membres inférieurs", "fatigue"],
+    "gravite": "JAUNE",
+    "unite_cible": "Cardiologie"
+  },
+  {
+    "id": "proto_cellulite",
+    "pathologie": "Cellulite Étendue",
+    "symptomes": ["érythème", "chaleur", "fièvre", "douleur"],
+    "gravite": "JAUNE",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_gastroenterite_deshydratation",
+    "pathologie": "Gastro-entérite avec Déshydratation",
+    "symptomes": ["diarrhée", "vomissements", "pli cutané", "tachycardie"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_migraine",
+    "pathologie": "Crise Migraineuse",
+    "symptomes": ["céphalée hémicrânienne", "photophobie", "nausées"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_lombalgie",
+    "pathologie": "Lombalgie Aiguë",
+    "symptomes": ["douleur lombaire", "limitation mouvement", "sans déficit"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_entorse_benigne",
+    "pathologie": "Entorse Bénigne",
+    "symptomes": ["traumatisme articulaire", "œdème modéré", "marche possible"],
+    "gravite": "VERT",
+    "unite_cible": "Orthopédie"
+  },
+  {
+    "id": "proto_plaie_simple",
+    "pathologie": "Plaie Simple",
+    "symptomes": ["plaie superficielle", "saignement minime", "petite taille"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_conjonctivite",
+    "pathologie": "Conjonctivite",
+    "symptomes": ["œil rouge", "larmoiement", "sécrétions"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_otite",
+    "pathologie": "Otite Moyenne Aiguë",
+    "symptomes": ["otalgie", "fièvre modérée", "congestion"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_rhinopharyngite",
+    "pathologie": "Rhinopharyngite",
+    "symptomes": ["rhinorrhée", "obstruction nasale", "toux"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_angine",
+    "pathologie": "Angine",
+    "symptomes": ["mal de gorge", "dysphagie", "fièvre"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_contusion",
+    "pathologie": "Contusion",
+    "symptomes": ["hématome", "douleur locale", "sans fracture"],
+    "gravite": "VERT",
+    "unite_cible": "Orthopédie"
+  },
+  {
+    "id": "proto_gastroenterite_simple",
+    "pathologie": "Gastro-entérite Simple",
+    "symptomes": ["diarrhée", "nausées", "vomissements modérés"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_urticaire",
+    "pathologie": "Urticaire Simple",
+    "symptomes": ["plaques érythémateuses", "démangeaisons", "sans œdème"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_zona",
+    "pathologie": "Zona",
+    "symptomes": ["éruption vésiculeuse", "douleur névralgique", "unilatéral"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_erytheme_fessier",
+    "pathologie": "Érythème Fessier",
+    "symptomes": ["rougeur fesses", "nourrisson", "irritation"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_fievre_enfant",
+    "pathologie": "Fièvre de l'Enfant",
+    "symptomes": ["fièvre", "enfant", "sans signe gravité"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_douleur_thoracique_atypique",
+    "pathologie": "Douleur Thoracique Atypique",
+    "symptomes": ["douleur thoracique", "sans signe gravité", "ECG normal"],
+    "gravite": "VERT",
+    "unite_cible": "Cardiologie"
+  },
+  {
+    "id": "proto_piqure_insecte",
+    "pathologie": "Piqûre d'Insecte",
+    "symptomes": ["piqûre", "œdème local", "prurit"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_coup_soleil",
+    "pathologie": "Coup de Soleil",
+    "symptomes": ["érythème cutané", "douleur", "exposition solaire"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_ongle_incarne",
+    "pathologie": "Ongle Incarné",
+    "symptomes": ["douleur orteil", "inflammation péri-unguéale", "rougeur"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_crampe_musculaire",
+    "pathologie": "Crampe Musculaire",
+    "symptomes": ["douleur musculaire", "contracture", "sans trauma"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_cystite",
+    "pathologie": "Cystite Simple",
+    "symptomes": ["brûlures mictionnelles", "pollakiurie", "sans fièvre"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_dysmenorrhee",
+    "pathologie": "Règles Douloureuses",
+    "symptomes": ["dysménorrhée", "douleur pelvienne", "sans signe gravité"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_constipation",
+    "pathologie": "Constipation",
+    "symptomes": ["constipation", "ballonnement", "sans occlusion"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_anxiete",
+    "pathologie": "Crise d'Angoisse",
+    "symptomes": ["anxiété", "palpitations", "hyperventilation"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_malaise_vagal",
+    "pathologie": "Malaise Vagal",
+    "symptomes": ["malaise", "contexte émotionnel", "récupération rapide"],
+    "gravite": "VERT",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_insomnie",
+    "pathologie": "Insomnie Aiguë",
+    "symptomes": ["insomnie", "fatigue", "sans pathologie"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_renouvellement_ordonnance",
+    "pathologie": "Renouvellement Ordonnance",
+    "symptomes": ["demande renouvellement", "traitement chronique"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_certificat_medical",
+    "pathologie": "Demande Certificat",
+    "symptomes": ["certificat administratif", "sans urgence"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_probleme_social",
+    "pathologie": "Problème Social",
+    "symptomes": ["problème logement", "isolement", "précarité"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_rhume_banal",
+    "pathologie": "Rhume Banal",
+    "symptomes": ["rhume", "nez qui coule", "sans fièvre"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_fatigue_chronique",
+    "pathologie": "Fatigue Chronique",
+    "symptomes": ["asthénie", "chronique", "sans pathologie aiguë"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_acne",
+    "pathologie": "Poussée Acné",
+    "symptomes": ["acné", "sans abcès", "chronique"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_mycose",
+    "pathologie": "Mycose Cutanée",
+    "symptomes": ["mycose", "démangeaisons", "chronique"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_verrues",
+    "pathologie": "Verrues",
+    "symptomes": ["verrues", "lésions bénignes"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  },
+  {
+    "id": "proto_allergie_saisonniere",
+    "pathologie": "Rhinite Allergique",
+    "symptomes": ["allergie", "éternuements", "chronique"],
+    "gravite": "GRIS",
+    "unite_cible": "Home"
+  }
+]

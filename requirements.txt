@@ -1,0 +1,16 @@
+# --- Cœur du Moteur RAG & IA ---
+mistralai==1.10.1
+faiss-cpu==1.13.2
+sentence-transformers==5.2.0
+torch==2.10.0
+
+# --- Validation de Données & Modèles ---
+pydantic==2.12.5
+numpy==2.4.1
+
+# --- Sécurité & Machine Learning (Guardrails) ---
+scikit-learn==1.8.0
+
+# --- Utilitaires & Environnement ---
+python-dotenv==1.2.1
+anyio==4.12.1
