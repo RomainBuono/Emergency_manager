@@ -2,10 +2,12 @@
 Agent IA intelligent pour gérer automatiquement le service des urgences.
 Utilise l'API Mistral AI pour prendre des décisions optimales.
 """
-
+import re
 import os
 import json
 import requests
+from pathlib import Path
+from dotenv import load_dotenv
 from typing import Any, Optional, Dict, List
 from datetime import datetime
 from mistralai import Mistral
@@ -224,24 +226,6 @@ Timestamp: {datetime.now().strftime("%H:%M:%S")}
             return int(delta.total_seconds() / 60)
         except:
             return 0
-
-    def _formater_regles_pour_prompt(self) -> str:
-        """Formate les règles de gestion pour le prompt."""
-        if not self.regles:
-            return "Aucune règle spécifique chargée."
-
-        texte_regles = ""
-        for regle in self.regles[:10]:  # Top 10 règles les plus importantes
-            texte_regles += f"\n🔹 {regle.get('titre', 'Règle')}:\n"
-            texte_regles += f"   {regle.get('regle', '')}\n"
-
-            if regle.get("contraintes"):
-                texte_regles += f"   Contraintes: {', '.join(regle['contraintes'])}\n"
-
-            if regle.get("delai_max"):
-                texte_regles += f"   Délai maximum: {regle['delai_max']}\n"
-
-        return texte_regles
 
     def demander_decision_a_mistral(self, situation: str) -> str:
         """

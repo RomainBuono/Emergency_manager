@@ -287,10 +287,23 @@ class RAGGuardrail:
         Initialiser le guardrail avec la configuration optionnelle.
         """
         self.config = config or GuardrailConfig()
-        
-        model_path = self._resolve_model_path()
-        self.classifier = self._load_classifier(model_path)
-        self.encoder = SentenceTransformer(self.config.embedding_model)
+        self._classifier = None 
+        self._encoder = None
+        self._model_path = self._resolve_model_path()
+
+    @property
+    def classifier(self):
+        """Charge le classificateur uniquement quand nécessaire."""
+        if self._classifier is None:
+            self._classifier = self._load_classifier(self._model_path)
+        return self._classifier
+    
+    @property
+    def encoder(self):
+        """Charge l'encoder uniquement quand nécessaire."""
+        if self._encoder is None:
+            self._encoder = SentenceTransformer(self.config.embedding_model)
+        return self._encoder
     
     def _resolve_model_path(self) -> Path:
         """Resolve the model file path."""
