@@ -1,5 +1,30 @@
 """Serveur MCP FastAPI pour gestion des urgences."""
 
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+import sys
+import os
+from pathlib import Path
+
+# --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
+# 1. Définition de la racine du projet (Absolue)
+CURRENT_FILE = Path(__file__).resolve()
+PROJECT_ROOT = CURRENT_FILE.parent.parent  # Remonte de 'mcp' vers la racine
+
+# 2. Injection dans le PYTHONPATH (Pour que Python voie le dossier 'rag')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 3. Chargement des variables d'environnement
+from dotenv import load_dotenv  # On l'importe ici car on a fixé le path juste avant si besoin
+ENV_PATH = PROJECT_ROOT / ".env"
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    # On utilise sys.stderr pour ne pas polluer la sortie standard (si pipe MCP)
+    print(f"ATTENTION : .env introuvable à {ENV_PATH}", file=sys.stderr)
+
+# --- BLOC 3 : IMPORTS APPLICATIFS (Standard & Tiers) ---
 import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any
@@ -9,8 +34,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-import tools
-from state import EmergencyState, Patient, Gravite, UniteCible
+# --- BLOC 4 : IMPORTS LOCAUX (Modules Métier) ---
+try:
+    # Comme on a fixé le sys.path, Python peut trouver les modules voisins
+    # Note : Si 'tools' et 'state' sont dans le même dossier que server.py,
+    # l'import direct fonctionne. S'ils étaient ailleurs, on ferait 'from mcp import tools'
+    import tools
+    from state import EmergencyState, Patient, Gravite, UniteCible
+except ImportError as e:
+    print(f"Erreur critique d'import local : {e}", file=sys.stderr)
+    print(f"   Vérifiez que 'tools.py' et 'state.py' sont bien dans : {CURRENT_FILE.parent}", file=sys.stderr)
+    sys.exit(1)
 
 
 # Configuration des logs

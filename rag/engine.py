@@ -33,7 +33,7 @@ class HospitalRAGEngine:
 
     def __init__(self, base_path: Optional[Path] = None, ml_threshold: float = 0.5, min_relevance: float = 0.4 ) -> None:
         """
-    Initialiser le moteur RAG avec protection de type garde-fou.
+    Initialiser le moteur RAG avec protection de type guardrail.
     Arguments :
         base_path : Répertoire racine des fichiers de données.
         ml_threshold : Seuil de détection des injections ML.

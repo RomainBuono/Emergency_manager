@@ -1,9 +1,36 @@
 """Modèles de données Pydantic pour l'état du système d'urgences."""
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+import sys
+import os
+from pathlib import Path
 
-from datetime import datetime
-from typing import Optional, List, Dict, Any, Tuple
-from pydantic import BaseModel, Field
+# --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
+# 1. Définition de la racine du projet (Absolue)
+CURRENT_FILE = Path(__file__).resolve()
+PROJECT_ROOT = CURRENT_FILE.parent.parent  # Remonte de 'mcp' vers la racine
+
+# 2. Injection dans le PYTHONPATH (Pour que Python voie le dossier 'rag')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 3. Chargement des variables d'environnement
+from dotenv import load_dotenv  # On l'importe ici car on a fixé le path juste avant si besoin
+ENV_PATH = PROJECT_ROOT / ".env"
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    # On utilise sys.stderr pour ne pas polluer la sortie standard (si pipe MCP)
+    print(f"ATTENTION : .env introuvable à {ENV_PATH}", file=sys.stderr)
+
+# --- BLOC 3 : IMPORTS APPLICATIFS ---
 from enum import Enum
+from datetime import datetime
+from typing import List, Dict, Optional,Tuple
+from uuid import uuid4
+
+# Pydantic est le standard industriel pour la validation de données en Python
+from pydantic import BaseModel, Field
 
 
 class Gravite(str, Enum):
