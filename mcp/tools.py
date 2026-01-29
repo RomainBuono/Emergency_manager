@@ -4,6 +4,9 @@
 import sys
 import os
 from pathlib import Path
+import random
+from datetime import datetime, timedelta
+from typing import Optional, Dict, Any, List, Tuple
 
 # --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
 # 1. Définition de la racine du projet (Absolue)
@@ -31,7 +34,9 @@ try:
         Staff,
         SalleAttente,
         Gravite,
-        UniteCible
+        UniteCible,
+        StatutPatient,
+        TypeStaff,
     )
 except ImportError as e:
     print(f"Erreur d'import dans tools.py : {e}", file=sys.stderr)
