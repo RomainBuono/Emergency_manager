@@ -2,20 +2,42 @@
 Simulateur Complet de Gestion des Urgences
 Implémente le flux complet selon le cahier des charges
 """
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+import sys
+import os
+from pathlib import Path
 
-from dotenv import load_dotenv
+# --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
+# 1. Définition de la racine du projet (Absolue)
+CURRENT_FILE = Path(__file__).resolve()
+PROJECT_ROOT = CURRENT_FILE.parent.parent  # Remonte de 'mcp' vers la racine
 
-load_dotenv()
+# 2. Injection dans le PYTHONPATH (Pour que Python voie le dossier 'rag')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
+# 3. Chargement des variables d'environnement
+from dotenv import load_dotenv  # On l'importe ici car on a fixé le path juste avant si besoin
+ENV_PATH = PROJECT_ROOT / ".env"
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    # On utilise sys.stderr pour ne pas polluer la sortie standard (si pipe MCP)
+    print(f"ATTENTION : .env introuvable à {ENV_PATH}", file=sys.stderr)
+
+# --- BLOC 3 : IMPORTS APPLICATIFS ---
+# Standards
+import time
+import json
+import random
+from datetime import datetime, timedelta
+
+# Data Science & Web
 import streamlit as st
 import requests
 import pandas as pd
 import plotly.graph_objects as go
-from datetime import datetime, timedelta
-import time
-import random
-import json
-import os
 
 st.set_page_config(page_title="Emergency Simulator", page_icon="🏥", layout="wide")
 

@@ -2,16 +2,47 @@
 Agent IA intelligent pour gérer automatiquement le service des urgences.
 Utilise l'API Mistral AI pour prendre des décisions optimales.
 """
-import re
+"""
+Agent IA intelligent pour gérer automatiquement le service des urgences.
+Utilise l'API Mistral AI pour prendre des décisions optimales.
+"""
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+import sys
 import os
-import json
-import requests
 from pathlib import Path
-from dotenv import load_dotenv
-from typing import Any, Optional, Dict, List
+
+# --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
+# 1. Définition de la racine du projet (Absolue)
+CURRENT_FILE = Path(__file__).resolve()
+PROJECT_ROOT = CURRENT_FILE.parent.parent  # Remonte de 'mcp' vers la racine
+
+# 2. Injection dans le PYTHONPATH (Pour que Python voie le dossier 'rag')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 3. Chargement des variables d'environnement
+from dotenv import load_dotenv  # On l'importe ici car on a fixé le path juste avant si besoin
+ENV_PATH = PROJECT_ROOT / ".env"
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    # On utilise sys.stderr pour ne pas polluer la sortie standard (si pipe MCP)
+    print(f"ATTENTION : .env introuvable à {ENV_PATH}", file=sys.stderr)
+
+import re
+import json
+import time
+import requests
 from datetime import datetime
-from mistralai import Mistral
-from rag.engine import HospitalRAGEngine
+from typing import Any, Optional, Dict, List
+
+try:
+    from rag.engine import HospitalRAGEngine
+    from mistralai import Mistral
+except ImportError as e:
+    print(f"Erreur critique d'import : {e}", file=sys.stderr)
+    print(f"Root détecté : {PROJECT_ROOT}", file=sys.stderr)
+    sys.exit(1)
 
 
 class EmergencyAgent:

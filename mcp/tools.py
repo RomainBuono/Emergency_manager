@@ -1,18 +1,41 @@
 """Outils MCP pour gérer le service des urgences."""
 
-from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, List, Tuple
-from mcp.state import (
-    EmergencyState,
-    Patient,
-    Staff,
-    SalleAttente,
-    Gravite,
-    UniteCible,
-    StatutPatient,
-    TypeStaff,
-)
-import random
+# --- BLOC 1 : BOOTLOADER (Infrastructure) ---
+import sys
+import os
+from pathlib import Path
+
+# --- BLOC 2 : CONFIGURATION DU SYSTEME (Avant tout import logique) ---
+# 1. Définition de la racine du projet (Absolue)
+CURRENT_FILE = Path(__file__).resolve()
+PROJECT_ROOT = CURRENT_FILE.parent.parent  # Remonte de 'mcp' vers la racine
+
+# 2. Injection dans le PYTHONPATH (Pour que Python voie le dossier 'rag')
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+# 3. Chargement des variables d'environnement
+from dotenv import load_dotenv  # On l'importe ici car on a fixé le path juste avant si besoin
+ENV_PATH = PROJECT_ROOT / ".env"
+if ENV_PATH.exists():
+    load_dotenv(dotenv_path=ENV_PATH)
+else:
+    # On utilise sys.stderr pour ne pas polluer la sortie standard (si pipe MCP)
+    print(f"ATTENTION : .env introuvable à {ENV_PATH}", file=sys.stderr)
+
+# --- BLOC 3 : IMPORTS APPLICATIFS ---
+try:
+    from state import (
+        EmergencyState,
+        Patient,
+        Staff,
+        SalleAttente,
+        Gravite,
+        UniteCible
+    )
+except ImportError as e:
+    print(f"Erreur d'import dans tools.py : {e}", file=sys.stderr)
+    sys.exit(1)
 
 DUREES_CONSULTATION = {
     Gravite.ROUGE: (1, 5),
@@ -22,7 +45,6 @@ DUREES_CONSULTATION = {
 }
 
 # ==================== ARRIVÉE DES PATIENTS ====================
-
 
 def ajouter_patient(state: EmergencyState, patient: Patient) -> Dict[str, Any]:
     """
@@ -102,9 +124,7 @@ def assigner_salle_attente(
         "places_restantes": salle.places_disponibles(),
     }
 
-
 # ==================== SURVEILLANCE DES SALLES ====================
-
 
 def assigner_surveillance(state: EmergencyState, staff_id: str, salle_id: str) -> Dict[str, Any]:
     """
