@@ -1,22 +1,17 @@
 """
-RAG Package for Emergency Manager
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Système RAG (Retrieval-Augmented Generation) avec guardrails de sécurité.
+Package RAG - Retrieval Augmented Generation
 """
 
+# Permettre l'import direct depuis rag
 from .engine import HospitalRAGEngine
+from .guardrails import RAGGuardrail, GuardrailConfig
 from .models import RAGResponse, MedicalProtocol, HospitalRule
-from .guardrails import RAGGuardrail, GuardrailConfig, GuardrailResult, BlockReason
 
 __all__ = [
-    "HospitalRAGEngine",
-    "RAGResponse",
-    "MedicalProtocol",
-    "HospitalRule",
-    "RAGGuardrail",
-    "GuardrailConfig",
-    "GuardrailResult",
-    "BlockReason",
+    'HospitalRAGEngine',
+    'RAGGuardrail',
+    'GuardrailConfig',
+    'RAGResponse',
+    'MedicalProtocol',
+    'HospitalRule'
 ]
-
-__version__ = "1.0.0"

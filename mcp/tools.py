@@ -2,7 +2,7 @@
 
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
-from state import (
+from mcp.state import (
     EmergencyState,
     Patient,
     Staff,
@@ -12,7 +12,14 @@ from state import (
     StatutPatient,
     TypeStaff,
 )
+import random
 
+DUREES_CONSULTATION = {
+    Gravite.ROUGE: (1, 5),
+    Gravite.JAUNE: (20, 40),
+    Gravite.VERT: (10, 25),
+    Gravite.GRIS: (5, 15),
+}
 
 # ==================== ARRIVÉE DES PATIENTS ====================
 
@@ -30,6 +37,7 @@ def ajouter_patient(state: EmergencyState, patient: Patient) -> Dict[str, Any]:
     if patient.id in state.patients:
         return {"success": False, "error": "Patient ID déjà existant"}
 
+    patient.arrived_at = state.current_time
     # Ajouter le patient
     patient.statut = StatutPatient.ATTENTE_TRIAGE
     state.patients[patient.id] = patient
@@ -121,7 +129,7 @@ def assigner_surveillance(state: EmergencyState, staff_id: str, salle_id: str) -
             "error": "Seules infirmières mobiles et aides-soignants peuvent surveiller",
         }
 
-    if not staff.peut_partir():
+    if not staff.peut_partir(state.current_time):
         return {"success": False, "error": "Staff pas disponible (contrainte 15 min)"}
 
     salle = next((s for s in state.salles_attente if s.id == salle_id), None)
@@ -130,9 +138,9 @@ def assigner_surveillance(state: EmergencyState, staff_id: str, salle_id: str) -
 
     # Assigner
     staff.localisation = salle_id
-    staff.occupe_depuis = datetime.now()
+    staff.occupe_depuis = state.current_time
     salle.surveillee_par = staff_id
-    salle.derniere_surveillance = datetime.now()
+    salle.derniere_surveillance = state.current_time
 
     return {"success": True, "staff_id": staff_id, "salle_id": salle_id}
 
@@ -176,7 +184,7 @@ def demarrer_transport_consultation(
             "error": "Seules infirmières mobiles et aides-soignants peuvent transporter",
         }
 
-    if not staff.peut_partir():
+    if not staff.peut_partir(state.current_time):
         return {"success": False, "error": "Staff pas disponible"}
 
     # Retirer patient de la salle d'attente
@@ -194,7 +202,7 @@ def demarrer_transport_consultation(
     staff.en_transport = True
     staff.patient_transporte_id = patient_id
     staff.destination_transport = "consultation"
-    staff.fin_transport_prevue = datetime.now() + timedelta(minutes=5)
+    staff.fin_transport_prevue = state.current_time + timedelta(minutes=5)
     staff.disponible = False
 
     return {
@@ -204,6 +212,37 @@ def demarrer_transport_consultation(
         "arrivee_prevue": staff.fin_transport_prevue.isoformat(),
         "duree_min": 5,
     }
+
+def demarrer_consultation(state: EmergencyState, patient_id: str) -> dict:
+    # 1) La salle de consultation doit être libre
+    if not state.consultation.est_libre():
+        return {"success": False, "error": "Consultation occupée"}
+
+    # 2) Patient doit exister
+    patient = state.patients.get(patient_id)
+    if not patient:
+        return {"success": False, "error": "Patient introuvable"}
+
+    # 3) Passer en consultation (horloge simulée)
+    patient.statut = StatutPatient.EN_CONSULTATION
+    state.consultation.patient_id = patient_id
+    state.consultation.debut_consultation = state.current_time
+
+    # 4) Définir une durée de consultation (non instantanée)
+    min_d, max_d = DUREES_CONSULTATION[patient.gravite]
+    duree = random.randint(min_d, max_d)
+
+    # ⚠️ Nécessite dans Patient: consultation_fin_prevue: Optional[datetime] = None
+    patient.consultation_fin_prevue = state.current_time + timedelta(minutes=duree)
+
+    return {
+        "success": True,
+        "patient_id": patient_id,
+        "debut": state.current_time.isoformat(),
+        "duree_min": duree,
+        "fin_prevue": patient.consultation_fin_prevue.isoformat(),
+    }
+
 
 
 def finaliser_transport_consultation(state: EmergencyState, patient_id: str) -> Dict[str, Any]:
@@ -240,7 +279,7 @@ def finaliser_transport_consultation(state: EmergencyState, patient_id: str) -> 
     # Placer en consultation
     patient.statut = StatutPatient.EN_CONSULTATION
     state.consultation.patient_id = patient_id
-    state.consultation.debut_consultation = datetime.now()
+    state.consultation.debut_consultation = state.current_time
 
     return {
         "success": True,
@@ -304,7 +343,7 @@ def terminer_consultation(
 
     # Terminer consultation
     patient.unite_cible = unite_cible
-    patient.consultation_end_at = datetime.now()
+    patient.consultation_end_at = state.current_time
 
     # Si GRIS (maison), patient sort directement
     if unite_cible == UniteCible.MAISON:
@@ -368,7 +407,7 @@ def retourner_patient_salle_attente(
             "error": "Seule une infirmière mobile peut retourner le patient",
         }
 
-    if not staff.peut_partir():
+    if not staff.peut_partir(state.current_time):
         return {"success": False, "error": "Infirmière pas disponible"}
 
     # Choisir salle automatiquement si pas spécifié
@@ -388,7 +427,7 @@ def retourner_patient_salle_attente(
     patient.statut = StatutPatient.SALLE_ATTENTE
     patient.salle_attente_id = salle_id
 
-    staff.occupe_depuis = datetime.now()
+    staff.occupe_depuis = state.current_time
 
     return {
         "success": True,
@@ -440,7 +479,7 @@ def demarrer_transport_unite(
             "error": "Seul un aide-soignant peut faire ce transport",
         }
 
-    if not staff.peut_partir():
+    if not staff.peut_partir(state.current_time):
         return {"success": False, "error": "Aide-soignant pas disponible"}
 
     # Vérifier disponibilité unité
@@ -472,8 +511,8 @@ def demarrer_transport_unite(
     staff.en_transport = True
     staff.patient_transporte_id = patient_id
     staff.destination_transport = patient.unite_cible.value
-    staff.fin_transport_prevue = datetime.now() + timedelta(minutes=duree_min)
-    staff.doit_revenir_avant = datetime.now() + timedelta(
+    staff.fin_transport_prevue = state.current_time + timedelta(minutes=duree_min)
+    staff.doit_revenir_avant = state.current_time + timedelta(
         minutes=60
     )  # Contrainte 60 min
     staff.disponible = False
@@ -533,6 +572,49 @@ def finaliser_transport_unite(state: EmergencyState, patient_id: str) -> Dict[st
         "statut_final": "SORTI (dans unité)",
     }
 
+from datetime import timedelta
+
+def tick(state: EmergencyState, minutes: int = 1) -> dict:
+    """Avance le temps simulé et finalise ce qui doit se terminer."""
+    state.current_time += timedelta(minutes=minutes)
+    events = []
+
+    # 1) Finaliser les transports arrivés
+    for s in state.staff:
+        if not s.en_transport or not s.fin_transport_prevue:
+            continue
+        if state.current_time < s.fin_transport_prevue:
+            continue
+
+        pid = s.patient_transporte_id
+        if not pid:
+            continue
+
+        if s.destination_transport == "consultation":
+            r = finaliser_transport_consultation(state, pid)
+            if r.get("success"):
+                events.append(f"🚑 {pid} arrivé en consultation")
+        else:
+            r = finaliser_transport_unite(state, pid)
+            if r.get("success"):
+                events.append(f"🏥 {pid} arrivé en unité")
+
+    # 2) Finaliser la consultation si la fin prévue est atteinte
+    if state.consultation.patient_id:
+        pid = state.consultation.patient_id
+        p = state.patients.get(pid)
+
+        if p and getattr(p, "consultation_fin_prevue", None) and p.consultation_fin_prevue <= state.current_time:
+            if p.unite_cible is None:
+                # fallback minimal pour éviter de planter
+                p.unite_cible = UniteCible.MAISON
+
+            r = terminer_consultation(state, p.id, p.unite_cible)
+            if r.get("success"):
+                events.append(f"✅ {p.id} fin consultation → {p.unite_cible.value}")
+
+    return {"success": True, "events": events, "now": state.current_time.isoformat()}
+
 
 # ==================== OUTILS INFORMATIFS ====================
 
@@ -553,7 +635,7 @@ def get_prochain_patient_consultation(state: EmergencyState) -> Optional[dict]:
         "patient_id": patient.id,
         "nom": f"{patient.prenom} {patient.nom}",
         "gravite": patient.gravite.value,
-        "temps_attente_min": patient.temps_attente_minutes(),
+        "temps_attente_min": patient.temps_attente_minutes(state.current_time),
         "salle_attente": patient.salle_attente_id,
     }
 
@@ -587,7 +669,7 @@ def get_alertes(state: EmergencyState) -> Dict[str, Any]:
     # Aides-soignants bientôt hors temps
     for staff in state.staff:
         if staff.type == TypeStaff.AIDE_SOIGNANT:
-            temps_restant = staff.temps_disponible_restant()
+            temps_restant = staff.temps_disponible_restant(state.current_time)
             if temps_restant is not None and temps_restant < 10:
                 alertes["aides_soignants_temps"].append(
                     f" {staff.id} doit revenir dans {temps_restant} min"
@@ -597,10 +679,10 @@ def get_alertes(state: EmergencyState) -> Dict[str, Any]:
     for patient in state.patients.values():
         if (
             patient.statut == StatutPatient.SALLE_ATTENTE
-            and patient.temps_attente_minutes() > 360
+            and patient.temps_attente_minutes(state.current_time) > 360
         ):
             alertes["patients_longue_attente"].append(
-                f" {patient.id} attend depuis {patient.temps_attente_minutes()} min (PRIORITÉ)"
+                f" {patient.id} attend depuis {patient.temps_attente_minutes(state.current_time)} min (PRIORITÉ)"
             )
 
     return alertes

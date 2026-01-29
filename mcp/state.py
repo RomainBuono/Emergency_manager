@@ -55,19 +55,21 @@ class Patient(BaseModel):
     # Timestamps
     arrived_at: datetime = Field(default_factory=datetime.now)
     consultation_end_at: Optional[datetime] = None
+
     # État actuel
     statut: StatutPatient = StatutPatient.ATTENTE_TRIAGE
     salle_attente_id: Optional[str] = None # "salle_attente_1", "salle_attente_2", "salle_attente_3"
+
     # Décision médicale (après consultation)
     unite_cible: Optional[UniteCible] = None
 
-    def temps_attente_minutes(self) -> int:
+    def temps_attente_minutes(self, now: datetime) -> Tuple[int, datetime]:
         """Retourne le temps d'attente en minutes."""
-        return int((datetime.now() - self.arrived_at).total_seconds() / 60)
+        return int((now  - self.arrived_at).total_seconds() / 60)
 
-    def priorite_queue(self) -> Tuple[int, datetime]:
+    def priorite_queue(self, now: datetime) -> Tuple[int, datetime]:
         """Calcule la priorité dans la queue selon les règles."""
-        temps_attente = self.temps_attente_minutes()
+        temps_attente = self.temps_attente_minutes(now)
         # ROUGE toujours en premier
         if self.gravite == Gravite.ROUGE:
             return (0, self.arrived_at)
@@ -100,9 +102,9 @@ class SalleAttente(BaseModel):
         """Vérifie si la salle est pleine."""
         return len(self.patients) >= self.capacite
 
-    def temps_sans_surveillance(self) -> int:
+    def temps_sans_surveillance(self, now: datetime) -> Tuple[int, datetime]:
         """Minutes sans surveillance."""
-        return int((datetime.now() - self.derniere_surveillance).total_seconds() / 60)
+        return int((now - self.derniere_surveillance).total_seconds() / 60)
 
 
 class Consultation(BaseModel):
@@ -141,21 +143,22 @@ class Staff(BaseModel):
     destination_transport: Optional[str] = None
     fin_transport_prevue: Optional[datetime] = None
 
-    def peut_partir(self) -> bool:
+    def peut_partir(self, now:datetime) -> bool:
         """Vérifie si le staff peut quitter sa position."""
         if self.type == TypeStaff.INFIRMIERE_FIXE:
             return False  # Ne bouge JAMAIS
+        
         if self.occupe_depuis:
-            temps_occupe = (datetime.now() - self.occupe_depuis).total_seconds() / 60
+            temps_occupe = (now - self.occupe_depuis).total_seconds() / 60
             if temps_occupe < 15:  # Contrainte 15 min
                 return False
         return self.disponible
 
-    def temps_disponible_restant(self) -> Optional[int]:
-        """Minutes restantes avant de devoir revenir (aides-soignants)."""
+    def temps_disponible_restant(self, now: datetime) -> Optional[int]:
+        """Minutes restantes avant de devoir revenir (aides-soignants) selon `now`."""
         if self.type != TypeStaff.AIDE_SOIGNANT or not self.doit_revenir_avant:
             return None
-        delta = (self.doit_revenir_avant - datetime.now()).total_seconds() / 60
+        delta = (self.doit_revenir_avant - now).total_seconds() / 60
         return max(0, int(delta))
 
 
@@ -163,17 +166,14 @@ class EmergencyState:
     """État global du service des urgences."""
 
     def __init__(self):
-        # 3 salles d'attente avec capacités différentes
         self.salles_attente = [
             SalleAttente(id="salle_attente_1", capacite=5),
             SalleAttente(id="salle_attente_2", capacite=10),
             SalleAttente(id="salle_attente_3", capacite=5),
         ]
 
-        # 1 salle de consultation
         self.consultation = Consultation()
-
-        # 5 unités de destination (capacités arbitraires, à ajuster)
+# A modifier (par une variable locale si besion )
         self.unites = [
             Unite(nom=UniteCible.SOINS_CRITIQUES, capacite=5),
             Unite(nom=UniteCible.CARDIO, capacite=10),
@@ -182,59 +182,58 @@ class EmergencyState:
             Unite(nom=UniteCible.ORTHO, capacite=7),
         ]
 
-        # Personnel
         self.staff = self._init_staff()
+        self.patients: dict[str, Patient] = {}
 
-        # Files d'attente
-        self.patients: dict[str, Patient] = {}  # Tous les patients (key = ID)
-
+        # ✅ horloge simulée centrale
         self.current_time = datetime.now()
+
 
     def _init_staff(self) -> list[Staff]:
         """Initialise le personnel selon les contraintes."""
         return [
             # 1 médecin fixe en consultation
-            Staff(id="M01", type=TypeStaff.MEDECIN, localisation="consultation"),
+            Staff(id="Medecin 1", type=TypeStaff.MEDECIN, localisation="consultation"),
             # 1 infirmière fixe au triage (ne bouge JAMAIS)
-            Staff(id="IA", type=TypeStaff.INFIRMIERE_FIXE, localisation="triage"),
+            Staff(id="Infirmière Triage", type=TypeStaff.INFIRMIERE_FIXE),
             # 2 infirmières mobiles (B & C)
             Staff(
-                id="IB",
-                type=TypeStaff.INFIRMIERE_MOBILE,
-                localisation="salle_attente_1",
+                id="Infirmière 2",
+                type=TypeStaff.INFIRMIERE_MOBILE
             ),
             Staff(
-                id="IC",
-                type=TypeStaff.INFIRMIERE_MOBILE,
-                localisation="salle_attente_2",
+                id="Infirmière 3",
+                type=TypeStaff.INFIRMIERE_MOBILE
             ),
             # 2 aides-soignants
-            Staff(id="AS01", type=TypeStaff.AIDE_SOIGNANT),
-            Staff(id="AS02", type=TypeStaff.AIDE_SOIGNANT),
+            Staff(id="Aide Soignant 1", type=TypeStaff.AIDE_SOIGNANT),
+            Staff(id="Aide Soignant 2", type=TypeStaff.AIDE_SOIGNANT),
         ]
 
     def get_queue_consultation(self) -> list[Patient]:
         """Retourne la file d'attente pour consultation (triée par priorité)."""
+        now = self.current_time
         patients_en_attente = [
-            p for p in self.patients.values() if p.statut == StatutPatient.SALLE_ATTENTE
+            p for p in self.patients.values()
+            if p.statut == StatutPatient.SALLE_ATTENTE
         ]
-        return sorted(patients_en_attente, key=lambda p: p.priorite_queue())
+        return sorted(patients_en_attente, key=lambda p: p.priorite_queue(now))
 
     def get_queue_transport_sortie(self) -> list[Patient]:
         """File d'attente pour transport vers unités (après consultation)."""
+        now = self.current_time
         patients_attente_transport = [
-            p
-            for p in self.patients.values()
+            p for p in self.patients.values()
             if p.statut == StatutPatient.ATTENTE_TRANSPORT_SORTIE
         ]
-        return sorted(patients_attente_transport, key=lambda p: p.priorite_queue())
+        return sorted(patients_attente_transport, key=lambda p: p.priorite_queue(now))
 
     def get_staff_disponible(self, type_staff: TypeStaff) -> list[Staff]:
         """Retourne le personnel disponible d'un type donné."""
+        now = self.current_time
         return [
-            s
-            for s in self.staff
-            if s.type == type_staff and s.peut_partir() and not s.en_transport
+            s for s in self.staff
+            if s.type == type_staff and s.peut_partir(now) and not s.en_transport
         ]
 
     def get_unite(self, nom: UniteCible) -> Optional[Unite]:
@@ -243,12 +242,12 @@ class EmergencyState:
 
     def verifier_surveillance_salles(self) -> list[str]:
         """Vérifie les salles sans surveillance >15 min."""
+        now = self.current_time
         alertes = []
         for salle in self.salles_attente:
-            if salle.temps_sans_surveillance() > 15 and len(salle.patients) > 0:
-                alertes.append(
-                    f"⚠️ {salle.id} sans surveillance depuis {salle.temps_sans_surveillance()} min"
-                )
+            mins = salle.temps_sans_surveillance(now)
+            if mins > 15 and len(salle.patients) > 0:
+                alertes.append(f"⚠️ {salle.id} sans surveillance depuis {mins} min")
         return alertes
 
     def to_dict(self) -> dict:
@@ -258,9 +257,7 @@ class EmergencyState:
             "consultation": self.consultation.model_dump(),
             "unites": [u.model_dump() for u in self.unites],
             "staff": [self._serialize_staff(s) for s in self.staff],
-            "patients": {
-                k: self._serialize_patient(v) for k, v in self.patients.items()
-            },
+            "patients": {k: self._serialize_patient(v) for k, v in self.patients.items()},
             "queue_consultation": [p.id for p in self.get_queue_consultation()],
             "queue_transport": [p.id for p in self.get_queue_transport_sortie()],
             "alertes_surveillance": self.verifier_surveillance_salles(),
