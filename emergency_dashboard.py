@@ -5,7 +5,7 @@ Version avec orchestration automatique des patients
 """
 
 import os
-# ✅ Augmenter le timeout HuggingFace AVANT tout import
+# Augmenter le timeout HuggingFace AVANT tout import
 os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "120"
 
 import sys
@@ -39,7 +39,7 @@ if 'state' not in st.session_state:
     st.session_state.agent_speed = 1.0  # Vitesse agent
     st.session_state.agent = None  # Agent sera chargé avec le RAG
 
-# ✅ Charger l'agent une seule fois au démarrage
+# Charger l'agent une seule fois au démarrage
 if 'agent_loaded' not in st.session_state:
     st.session_state.agent_loaded = False
 
@@ -59,6 +59,10 @@ class EmergencyAgent:
     
     def __init__(self, state: EmergencyState):
         self.state = state
+<<<<<<< HEAD
+=======
+        # Mode simulation : rapide, sans ML, avec cache embeddings
+>>>>>>> 24a8c08d3addbf99c449b5533ab8c54d28ebea65
         self.rag_engine = HospitalRAGEngine(mode="simulation")
     
     def cycle_orchestration(self) -> list[str]:
@@ -530,8 +534,13 @@ with col_right:
     aide_dispo = sum(1 for s in staff if s.get("type") == "aide_soignant" and s.get("disponible"))
     
     st.markdown(f"**👨‍⚕️ Médecins:** {med_dispo} dispo")
+<<<<<<< HEAD
     st.markdown(f"**🩺 infirmier(ère):** {inf_dispo} dispo")
     st.markdown(f"**🚑 Aides-soignant(e):** {aide_dispo} dispo")
+=======
+    st.markdown(f"**🩺 Infirmières:** {inf_dispo} dispo")
+    st.markdown(f"**🚑 Aides soignantes:** {aide_dispo} dispo")
+>>>>>>> 24a8c08d3addbf99c449b5533ab8c54d28ebea65
     
     st.divider()
     
