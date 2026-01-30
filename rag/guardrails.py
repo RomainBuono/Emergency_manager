@@ -17,6 +17,8 @@ import numpy as np
 import numpy.typing as npt
 
 from .models import MedicalProtocol, HospitalRule
+import os
+os.environ['HF_HUB_DOWNLOAD_TIMEOUT'] = '120'
 
 # Configuration du logger
 logger = logging.getLogger("MedicalGuardrail")
@@ -246,12 +248,12 @@ class MedicalLogicValidator:
         # Règle 1 : ROUGE incompatible avec retour maison
         if protocol.gravite == "ROUGE":
             if any(r.id == "regle_retour_gris" for r in rules):
-                return False, "ROUGE incompatible with home return"
+                return False, "Protocole incomplet"
         
         # Règle 2 : VERT > 360min nécessite exception
         if protocol.gravite == "VERT" and wait_time > cls.MAX_WAIT_VERT:
             if not any("360min" in r.id for r in rules):
-                return False, f"VERT > {cls.MAX_WAIT_VERT}min without exception"
+                return False, f"VERT > {cls.MAX_WAIT_VERT}min sans execption"
         
         # Règle 3 : JAUNE > 120min nécessite réévaluation
         if protocol.gravite == "JAUNE" and wait_time > cls.MAX_WAIT_JAUNE:
@@ -264,6 +266,11 @@ class MedicalLogicValidator:
 class RAGGuardrail:
     """
     Système de sécurité multicouche pour les requêtes médicales RAG.
+
+    Avec la simulation dashboard : 
+    - Mode simulation (use_ml=False) : rapide, sans ML
+    - Mode chatbot (use_ml=True) : sécurisé, avec ML complet
+    - Cache d'embeddings pour requêtes fréquentes
     
     Met en œuvre trois couches de vérification :
         1. Détection d'injection (ML + heuristics)
@@ -280,22 +287,41 @@ class RAGGuardrail:
         >>> guardrail = RAGGuardrail(config)
         >>> result = guardrail.check("Assigner patient P042 en salle 1")
         >>> assert result.is_safe
+        # Mode simulation (rapide)
+        >>> guardrail = RAGGuardrail(config, use_ml=False)
+        # Mode chatbot (sécurisé)
+        >>> guardrail = RAGGuardrail(config, use_ml=True)
     """
     
-    def __init__(self, config: Optional[GuardrailConfig] = None) -> None:
+    def __init__(self, config: Optional[GuardrailConfig] = None, use_ml: bool = True ) -> None:
         """
-        Initialiser le guardrail avec la configuration optionnelle.
+        Initialiser le guardrail avec configuration et mode.
+        
+        Args:
+            config: Configuration optionnelle
+            use_ml: Si True, charge le ML (mode chatbot). Si False, mode rapide (simulation).
         """
         self.config = config or GuardrailConfig()
-        self._classifier = None 
+        self.use_ml = use_ml # Sauvegard 
+        self.embedding_cache: Dict[str, npt.NDArray] = {}
         self._encoder = None
+        self._classifier = None
         self._model_path = self._resolve_model_path()
+
+        if use_ml:
+            logger.info("Mode chatbot : Guardrails ML activés (sécurisé mais plus lent)")
+        else:
+            logger.info("Mode simulation : Guardrails ML désactivés (rapide)")
+
 
     @property
     def classifier(self):
-        """Charge le classificateur uniquement quand nécessaire."""
+        """Charge le classificateur uniquement quand nécessaire si use_ml = True"""
+        if not self.use_ml:
+            return None
         if self._classifier is None:
             self._classifier = self._load_classifier(self._model_path)
+            logger.info("Modèle ML d'injection chargé")
         return self._classifier
     
     @property
@@ -303,6 +329,7 @@ class RAGGuardrail:
         """Charge l'encoder uniquement quand nécessaire."""
         if self._encoder is None:
             self._encoder = SentenceTransformer(self.config.embedding_model)
+            logger.info("Modèle d'embedding chargé")
         return self._encoder
     
     def _resolve_model_path(self) -> Path:
@@ -322,24 +349,77 @@ class RAGGuardrail:
         
         with open(path, "rb") as file:
             return pickle.load(file)
+        
+    def embed_query(self, query: str) -> npt.NDArray:
+        """
+        ✅ NOUVEAU : Calculer l'embedding avec cache (Solution 2).
+        
+        Args:
+            query: Texte à encoder
+            
+        Returns:
+            Embedding numpy array
+        """
+        # Normaliser la clé de cache
+        cache_key = query.lower().strip()
+        
+        # Vérifier le cache
+        if cache_key in self.embedding_cache:
+            return self.embedding_cache[cache_key]
+        
+        # Calculer l'embedding
+        embedding = self.encoder.encode(query, convert_to_tensor=False)
+        
+        # Mettre en cache (limiter à 200 entrées max)
+        if len(self.embedding_cache) < 200:
+            self.embedding_cache[cache_key] = embedding
+        
+        return embedding
+    
+    def precompute_embeddings(self, queries: List[str]) -> None:
+        """
+        ✅ NOUVEAU : Pré-calculer les embeddings pour une liste de requêtes.
+        
+        Utile pour pré-charger les symptômes communs en mode simulation.
+        
+        Args:
+            queries: Liste de requêtes à pré-calculer
+        """
+        logger.info(f"Pré-calcul de {len(queries)} embeddings...")
+        for query in queries:
+            _ = self.embed_query(query)  # Calcule et met en cache
+        logger.info(f"✅ {len(queries)} embeddings pré-calculés et mis en cache")
+
+
     
     def verify_input(self, query: str) -> tuple[bool, float, npt.NDArray, str]:
         """
         Vérifier les entrées pour les attaques par injection (Couche 1).
         
-        Combine la reconnaissance de formes heuristique avec la détection basée sur l'apprentissage automatique
-        pour une protection complète contre les injections.
+        Utiliser seulement si use_ml=True, sinon vérification rapide.
+        
         Args:
             query: Saisie utilisateur à vérifier.
+            
+        Returns:
+            (is_safe, threat_score, embedding, reason)
         """
+        # 1. Vérification heuristique (toujours active, rapide)
         is_injection, pattern = InjectionDetector.detect(query)
         if is_injection:
             empty_embedding = np.array([])
             return False, 1.0, empty_embedding, f"Injection detected: {pattern}"
         
-        embedding = self.encoder.encode(query)
-        threat_probability = self._predict_threat(embedding)
+        # 2. Calculer l'embedding (avec cache)
+        embedding = self.embed_query(query)
         
+        # 3. Vérification ML (seulement si use_ml=True)
+        if not self.use_ml:
+            # Mode rapide : pas de ML, retour immédiat
+            return True, 0.0, embedding, "OK (mode rapide)"
+        
+        # Mode chatbot : vérification ML complète
+        threat_probability = self._predict_threat(embedding)
         is_safe = threat_probability < self.config.ml_threshold
         reason = "" if is_safe else f"ML threat score: {threat_probability:.3f}"
         

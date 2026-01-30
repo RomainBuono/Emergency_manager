@@ -27,7 +27,6 @@ else:
 from enum import Enum
 from datetime import datetime
 from typing import List, Dict, Optional,Tuple
-from uuid import uuid4
 
 # Pydantic est le standard industriel pour la validation de données en Python
 from pydantic import BaseModel, Field
@@ -90,7 +89,10 @@ class Patient(BaseModel):
     # Décision médicale (après consultation)
     unite_cible: Optional[UniteCible] = None
 
-    def temps_attente_minutes(self, now: datetime) -> Tuple[int, datetime]:
+    class Config:
+        use_enum_values = True
+
+    def temps_attente_minutes(self, now: datetime) -> int:
         """Retourne le temps d'attente en minutes."""
         return int((now  - self.arrived_at).total_seconds() / 60)
 
@@ -129,7 +131,7 @@ class SalleAttente(BaseModel):
         """Vérifie si la salle est pleine."""
         return len(self.patients) >= self.capacite
 
-    def temps_sans_surveillance(self, now: datetime) -> Tuple[int, datetime]:
+    def temps_sans_surveillance(self, now: datetime) -> int:
         """Minutes sans surveillance."""
         return int((now - self.derniere_surveillance).total_seconds() / 60)
 
@@ -161,6 +163,7 @@ class Staff(BaseModel):
     type: TypeStaff
     disponible: bool = True
     localisation: str = "repos"  # "triage", "salle_attente_X", "consultation", etc.
+    salle_surveillee: Optional[str] = None
     # Pour contraintes temporelles
     occupe_depuis: Optional[datetime] = None
     doit_revenir_avant: Optional[datetime] = None  # Pour aides-soignants (60 min max)

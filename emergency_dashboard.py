@@ -4,8 +4,13 @@
 Version avec orchestration automatique des patients
 """
 
+import os
+# ✅ Augmenter le timeout HuggingFace AVANT tout import
+os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "120"
+
 import sys
 from pathlib import Path
+
 
 current_dir = Path(__file__).parent.absolute()
 sys.path.insert(0, str(current_dir))
@@ -32,6 +37,11 @@ if 'state' not in st.session_state:
     st.session_state.events = []
     st.session_state.agent_enabled = True  # Agent activé par défaut
     st.session_state.agent_speed = 1.0  # Vitesse agent
+    st.session_state.agent = None  # Agent sera chargé avec le RAG
+
+# ✅ Charger l'agent une seule fois au démarrage
+if 'agent_loaded' not in st.session_state:
+    st.session_state.agent_loaded = False
 
 def add_event(msg, emoji="ℹ️"):
     st.session_state.events.append({
@@ -49,8 +59,8 @@ class EmergencyAgent:
     
     def __init__(self, state: EmergencyState):
         self.state = state
-        self.state = state
-        self.rag_engine = HospitalRAGEngine()
+        # ✅ Mode simulation : rapide, sans ML, avec cache embeddings
+        self.rag_engine = HospitalRAGEngine(mode="simulation")
     
     def cycle_orchestration(self) -> list[str]:
         """Exécute un cycle complet d'orchestration"""
@@ -178,7 +188,7 @@ class EmergencyAgent:
         # Vérifier si l'unité a de la place
         unite = self.state.get_unite(prochain.unite_cible)
         if not unite or not unite.a_de_la_place():
-            return f"⚠️ Unité {prochain.unite_cible.value} saturée"
+            return f"⚠️ Unité {prochain.unite_cible} saturée"
         
         # Vérifier si un aide-soignant est disponible
         aides_dispo = self.state.get_staff_disponible(TypeStaff.AIDE_SOIGNANT)
@@ -196,7 +206,7 @@ class EmergencyAgent:
         
         if result.get("success"):
             # Simuler l'arrivée
-            return f"🏥 {prochain.prenom} transporté vers {prochain.unite_cible.value}"
+            return f"🏥 {prochain.prenom} transporté vers {prochain.unite_cible}"
         
         return None
     def _finaliser_transports(self) -> list[str]:
@@ -213,6 +223,15 @@ class EmergencyAgent:
             alertes.append(f"⚠️ {alert}")
         
         return alertes
+
+# ✅ Charger l'agent UNE SEULE FOIS avec indicateur de progression
+if not st.session_state.agent_loaded:
+    with st.spinner("🔄 Chargement du moteur RAG et de l'agent (première fois seulement)..."):
+        st.session_state.agent = EmergencyAgent(st.session_state.state)
+        st.session_state.agent_loaded = True
+        st.success("✅ Agent et RAG chargés avec succès !")
+        time.sleep(1)
+        st.rerun()
 
 # ========== FONCTIONS UTILITAIRES ==========
 
@@ -475,9 +494,9 @@ if st.session_state.running and st.session_state.agent_enabled:
     st.session_state.temps += 1
     tools.tick(st.session_state.state, 1)
     
-    # L'agent prend des décisions
-    agent = EmergencyAgent(st.session_state.state)
-    actions = agent.cycle_orchestration()
+    # ✅ L'agent est déjà chargé, juste mettre à jour son state
+    st.session_state.agent.state = st.session_state.state
+    actions = st.session_state.agent.cycle_orchestration()
     
     for action in actions:
         if action:
@@ -501,5 +520,6 @@ if st.session_state.running and st.session_state.agent_enabled:
 elif st.session_state.running and not st.session_state.agent_enabled:
     # Simulation sans agent (juste incrémente le temps)
     st.session_state.temps += 1
+    tools.tick(st.session_state.state, 1)  # ✅ Faire avancer le temps simulé
     time.sleep(1)
     st.rerun()

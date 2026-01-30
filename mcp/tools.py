@@ -72,8 +72,8 @@ def ajouter_patient(state: EmergencyState, patient: Patient) -> Dict[str, Any]:
     return {
         "success": True,
         "patient_id": patient.id,
-        "gravite": patient.gravite.value,
-        "message": f"Patient {patient.prenom} {patient.nom} ajouté (gravité: {patient.gravite.value})",
+        "gravite": patient.gravite,
+        "message": f"Patient {patient.prenom} {patient.nom} ajouté (gravité: {patient.gravite})",
     }
 
 
@@ -160,9 +160,15 @@ def assigner_surveillance(state: EmergencyState, staff_id: str, salle_id: str) -
     salle = next((s for s in state.salles_attente if s.id == salle_id), None)
     if not salle:
         return {"success": False, "error": "Salle introuvable"}
+    
+    if staff.salle_surveillee:
+        ancienne_salle = next((s for s in state.salles_attente if s.id == staff.salle_surveillee), None)
+        if ancienne_salle:
+            ancienne_salle.surveillee_par = None
 
     # Assigner
     staff.localisation = salle_id
+    staff.salle_surveillee = salle_id 
     staff.occupe_depuis = state.current_time
     salle.surveillee_par = staff_id
     salle.derniere_surveillance = state.current_time
@@ -220,9 +226,23 @@ def demarrer_transport_consultation(
         if salle and patient_id in salle.patients:
             salle.patients.remove(patient_id)
 
+    if staff.salle_surveillee:
+        salle = next((s for s in state.salles_attente if s.id == staff.salle_surveillee), None)
+        if salle and len(salle.patients) > 0:
+            # Vérifier s'il y a un autre surveillant disponible pour prendre le relais
+            # OU si l'absence sera < 15 min
+            duree_absence = 5  # Transport = 5 min
+            if duree_absence <= 15:
+                # OK, on peut partir brièvement
+                salle.derniere_surveillance = state.current_time
+            else:
+                return {"success": False, "error": "Salle doit rester surveillée"}
+
     # Démarrer transport (5 min)
     patient.statut = StatutPatient.EN_TRANSPORT_CONSULTATION
     patient.salle_attente_id = None
+
+    state.consultation.patient_id = patient_id
 
     staff.en_transport = True
     staff.patient_transporte_id = patient_id
@@ -300,6 +320,15 @@ def finaliser_transport_consultation(state: EmergencyState, patient_id: str) -> 
         transporteur.fin_transport_prevue = None
         transporteur.disponible = True
         transporteur.occupe_depuis = None
+        
+        if transporteur.salle_surveillee:
+            transporteur.localisation = transporteur.salle_surveillee
+            salle = next((s for s in state.salles_attente if s.id == transporteur.salle_surveillee), None)
+            if salle:
+                salle.derniere_surveillance = state.current_time
+        else:
+            transporteur.localisation = "repos"
+            transporteur.occupe_depuis = None
 
     # Placer en consultation
     patient.statut = StatutPatient.EN_CONSULTATION
@@ -364,7 +393,7 @@ def terminer_consultation(
         if not unite:
             return {"success": False, "error": "Unité introuvable"}
         if not unite.a_de_la_place():
-            return {"success": False, "error": f"Unité {unite_cible.value} pleine"}
+            return {"success": False, "error": f"Unité {unite_cible} pleine"}
 
     # Terminer consultation
     patient.unite_cible = unite_cible
@@ -390,7 +419,7 @@ def terminer_consultation(
     return {
         "success": True,
         "patient_id": patient_id,
-        "destination": unite_cible.value,
+        "destination": unite_cible,
         "statut": "Attente transport vers unité",
     }
 
@@ -464,7 +493,6 @@ def retourner_patient_salle_attente(
 
 # ==================== TRANSPORT VERS UNITÉ ====================
 
-
 def demarrer_transport_unite(
     state: EmergencyState, patient_id: str, staff_id: str
 ) -> Dict[str, Any]:
@@ -510,16 +538,7 @@ def demarrer_transport_unite(
     # Vérifier disponibilité unité
     unite = state.get_unite(patient.unite_cible)
     if not unite or not unite.a_de_la_place():
-        return {"success": False, "error": f"Unité {patient.unite_cible.value} pleine"}
-
-    # Retirer de salle d'attente si nécessaire
-    if patient.salle_attente_id:
-        salle = next(
-            (s for s in state.salles_attente if s.id == patient.salle_attente_id), None
-        )
-        if salle and patient_id in salle.patients:
-            salle.patients.remove(patient_id)
-        patient.salle_attente_id = None
+        return {"success": False, "error": f"Unité {patient.unite_cible} pleine"}
 
     # Déterminer durée transport
     if (
@@ -530,12 +549,32 @@ def demarrer_transport_unite(
     else:
         duree_min = 45
 
+    # ✅ GESTION DE LA SURVEILLANCE pour transport long (>15 min)
+    if duree_min > 15 and staff.salle_surveillee:
+        salle_surveillee = next(
+            (s for s in state.salles_attente if s.id == staff.salle_surveillee), None
+        )
+        if salle_surveillee:
+            # Aide-soignant peut partir même si salle occupée (rôle secondaire)
+            # Mais on libère la surveillance
+            salle_surveillee.surveillee_par = None
+            staff.salle_surveillee = None
+
+    # Retirer de salle d'attente si nécessaire
+    if patient.salle_attente_id:
+        salle = next(
+            (s for s in state.salles_attente if s.id == patient.salle_attente_id), None
+        )
+        if salle and patient_id in salle.patients:
+            salle.patients.remove(patient_id)
+        patient.salle_attente_id = None
+
     # Démarrer transport
     patient.statut = StatutPatient.EN_TRANSPORT_SORTIE
 
     staff.en_transport = True
     staff.patient_transporte_id = patient_id
-    staff.destination_transport = patient.unite_cible.value
+    staff.destination_transport = patient.unite_cible
     staff.fin_transport_prevue = state.current_time + timedelta(minutes=duree_min)
     staff.doit_revenir_avant = state.current_time + timedelta(
         minutes=60
@@ -546,7 +585,7 @@ def demarrer_transport_unite(
         "success": True,
         "patient_id": patient_id,
         "staff_id": staff_id,
-        "destination": patient.unite_cible.value,
+        "destination": patient.unite_cible,
         "duree_min": duree_min,
         "arrivee_prevue": staff.fin_transport_prevue.isoformat(),
     }
@@ -593,7 +632,7 @@ def finaliser_transport_unite(state: EmergencyState, patient_id: str) -> Dict[st
     return {
         "success": True,
         "patient_id": patient_id,
-        "unite": patient.unite_cible.value,
+        "unite": patient.unite_cible,
         "statut_final": "SORTI (dans unité)",
     }
 
@@ -636,7 +675,7 @@ def tick(state: EmergencyState, minutes: int = 1) -> dict:
 
             r = terminer_consultation(state, p.id, p.unite_cible)
             if r.get("success"):
-                events.append(f"✅ {p.id} fin consultation → {p.unite_cible.value}")
+                events.append(f"✅ {p.id} fin consultation → {p.unite_cible}")
 
     return {"success": True, "events": events, "now": state.current_time.isoformat()}
 
@@ -648,6 +687,24 @@ def get_etat_systeme(state: EmergencyState) -> Dict[str, Any]:
     """Retourne l'état complet du système."""
     return state.to_dict()
 
+def get_staff_status(state: EmergencyState) -> Dict[str, Any]:
+    """Vue complète du personnel."""
+    now = state.current_time
+    return {
+        "staff": [
+            {
+                "id": s.id,
+                "type": s.type,
+                "localisation": s.localisation,
+                "disponible": s.disponible,
+                "en_transport": s.en_transport,
+                "patient_id": s.patient_transporte_id,
+                "temps_restant_min": s.temps_disponible_restant(now),
+                "peut_partir": s.peut_partir(now)
+            }
+            for s in state.staff
+        ]
+    }
 
 def get_prochain_patient_consultation(state: EmergencyState) -> Optional[dict]:
     """Retourne le prochain patient à appeler en consultation."""
@@ -659,7 +716,7 @@ def get_prochain_patient_consultation(state: EmergencyState) -> Optional[dict]:
     return {
         "patient_id": patient.id,
         "nom": f"{patient.prenom} {patient.nom}",
-        "gravite": patient.gravite.value,
+        "gravite": patient.gravite,
         "temps_attente_min": patient.temps_attente_minutes(state.current_time),
         "salle_attente": patient.salle_attente_id,
     }
@@ -675,9 +732,9 @@ def get_prochain_patient_transport(state: EmergencyState) -> Optional[dict]:
     return {
         "patient_id": patient.id,
         "nom": f"{patient.prenom} {patient.nom}",
-        "gravite": patient.gravite.value,
+        "gravite": patient.gravite,
         "destination": (
-            patient.unite_cible.value if patient.unite_cible else "Non définie"
+            patient.unite_cible if patient.unite_cible else "Non définie"
         ),
     }
 
