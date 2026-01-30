@@ -11,13 +11,13 @@ os.environ["HF_HUB_DOWNLOAD_TIMEOUT"] = "120"
 import sys
 from pathlib import Path
 
-
 current_dir = Path(__file__).parent.absolute()
 sys.path.insert(0, str(current_dir))
 sys.path.insert(0, str(current_dir / "mcp"))
 
 import streamlit as st
 from datetime import datetime, timedelta
+from typing import Optional  # ✅ Ajouté
 import time
 import random
 
@@ -55,184 +55,145 @@ def add_event(msg, emoji="ℹ️"):
 # ========== AGENT DE DÉCISION ==========
 
 class EmergencyAgent:
-    """Agent qui orchestre automatiquement les patients"""
+    """Agent IA orchestrant les flux en respectant la sécurité et les priorités."""
     
     def __init__(self, state: EmergencyState):
         self.state = state
-        # ✅ Mode simulation : rapide, sans ML, avec cache embeddings
         self.rag_engine = HospitalRAGEngine(mode="simulation")
     
     def cycle_orchestration(self) -> list[str]:
-        """Exécute un cycle complet d'orchestration"""
+        """Exécute le cycle complet des opérations urgences."""
         actions = []
         
+        # 1. FINALISATION (Correction de l'AttributeError)
         actions.extend(self._finaliser_transports())
-        # 1. Vérifier si un patient peut aller en consultation
-        action = self._gerer_consultation()
-        if action:
-            actions.append(action)
         
-        # 2. Vérifier si un patient en consultation peut sortir
-        action = self._gerer_sortie_consultation()
-        if action:
-            actions.append(action)
-        
-        # 3. Vérifier si un patient peut être transporté vers une unité
-        action = self._gerer_transport_unite()
-        if action:
-            actions.append(action)
-        
-        # 4. Vérifier surveillance des salles
-        alertes = self._verifier_surveillance()
-        actions.extend(alertes)
-        
-        return actions
+        # 2. SURVEILLANCE (Priorité sécurité 15 min)
+        actions.extend(self._gerer_surveillance())
     
-    def _gerer_consultation(self) -> str:
-        """Gère l'entrée en consultation"""
-        # Si consultation occupée, rien à faire
-        if not self.state.consultation.est_libre():
-            return None
-        
-        # Récupérer le prochain patient
-        queue = self.state.get_queue_consultation()
-        if not queue:
-            return None
-        
-        prochain = queue[0]
-        
-        # Vérifier si un aide-soignant est disponible
-        aides_dispo = self.state.get_staff_disponible(TypeStaff.AIDE_SOIGNANT)
-        if not aides_dispo:
-            return None
-        
-        aide = aides_dispo[0]
-        
-        # Démarrer le transport
-        result = tools.demarrer_transport_consultation(
-            self.state, 
-            prochain.id, 
-            aide.id
-        )
-        
-        if result.get("success"):
-            return f"🚑 {prochain.prenom} {prochain.nom} transporté en consultation"
-        
-        return None
+        # 3. SORTIE DE CONSULTATION (Décision RAG)
+        action_sortie = self._gerer_sortie_consultation()
+        if action_sortie:
+            actions.append(action_sortie)
     
-    def _gerer_sortie_consultation(self) -> str:
-        """Gère la fin de consultation (décision via la RAG)."""
-        if self.state.consultation.est_libre():
-            return None
+        # 4. TRANSPORT VERS UNITÉS (Règle 45 min + Règle de Secours)
+        action_trans_unite = self._gerer_transport_unite()
+        if action_trans_unite:
+            actions.append(action_trans_unite)
 
-        patient_id = self.state.consultation.patient_id
-        patient = self.state.patients.get(patient_id)
-        if not patient:
-            return None
-
-        # Marquer la fin de consultation (simulation instantanée)
-        if not patient.consultation_end_at:
-            patient.consultation_end_at = self.state.current_time
-            return None
-
-        # Décision via la RAG
-        try:
-            wait_time = patient.temps_attente_minutes(self.state.current_time)
-        except Exception:
-            wait_time = 0
-
-        try:
-            rag_result = self.rag_engine.query(
-                patient.symptomes,
-                wait_time=wait_time
-            )
-        except Exception:
-            rag_result = None
-
-        unite_cible = UniteCible.MAISON
-
-        if rag_result and getattr(rag_result, "is_safe", False) and getattr(rag_result, "protocol", None):
-            protocol = rag_result.protocol
-
-            try:
-                unite_cible = UniteCible(protocol.unite_cible)
-            except Exception:
-                unite_cible = UniteCible.MAISON
-
-            try:
-                patient.gravite = Gravite(protocol.gravite)
-            except Exception:
-                pass
-
-        result = tools.terminer_consultation(
-            self.state,
-            patient.id,
-            unite_cible
-        )
-
-        if result.get("success"):
-            return f"Consultation en cours: {patient.prenom} {patient.nom}"
-
-        return None
-
-
+        # 5. ENTRÉE EN CONSULTATION
+        action_entree = self._gerer_consultation()
+        if action_entree:
+            actions.append(action_entree)
     
-    def _gerer_transport_unite(self) -> str:
-        """Gère le transport vers les unités"""
-        queue_transport = self.state.get_queue_transport_sortie()
-        if not queue_transport:
-            return None
-        
-        prochain = queue_transport[0]
-        
-        # Vérifier si l'unité a de la place
-        unite = self.state.get_unite(prochain.unite_cible)
-        if not unite or not unite.a_de_la_place():
-            return f"⚠️ Unité {prochain.unite_cible} saturée"
-        
-        # Vérifier si un aide-soignant est disponible
-        aides_dispo = self.state.get_staff_disponible(TypeStaff.AIDE_SOIGNANT)
-        if not aides_dispo:
-            return None
-        
-        aide = aides_dispo[0]
-        
-        # Démarrer le transport
-        result = tools.demarrer_transport_unite(
-            self.state,
-            prochain.id,
-            aide.id
-        )
-        
-        if result.get("success"):
-            # Simuler l'arrivée
-            return f"🏥 {prochain.prenom} transporté vers {prochain.unite_cible}"
-        
-        return None
+        return [a for a in actions if a is not None]
+
     def _finaliser_transports(self) -> list[str]:
-        # ✅ déléguer au moteur temps unique
-        r = tools.tick(self.state, minutes=0)  # minutes=0 si tu avances le temps ailleurs
-        return r.get("events", [])
+        """Vérifie si les transports sont arrivés et libère le personnel."""
+        actions = []
+        for staff in self.state.staff:
+            if staff.en_transport and staff.fin_transport_prevue:
+                if self.state.current_time >= staff.fin_transport_prevue:
+                    pid = staff.patient_transporte_id
+                    if staff.destination_transport == "consultation":
+                        tools.finaliser_transport_consultation(self.state, pid)
+                        actions.append(f"✅ Arrivée en consultation : {pid}")
+                    else:
+                        tools.finaliser_transport_unite(self.state, pid)
+                        p = self.state.patients.get(pid)
+                        actions.append(f"🏁 {p.prenom if p else pid} arrivé en unité")
+        return actions
 
-    def _verifier_surveillance(self) -> list[str]:
-        """Vérifie la surveillance des salles"""
-        alertes = []
-        surveillance_alerts = self.state.verifier_surveillance_salles()
+    def _gerer_transport_unite(self) -> Optional[str]:
+        """Gère le transport vers les unités avec gestion du quorum de sécurité."""
+        queue = self.state.get_queue_transport_sortie()
+        if not queue: return None
+    
+        p = queue[0]
+    
+        # 1. Identifier le personnel mobile libre (Infirmières B/C + AS 1/2)
+        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
+        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
+    
+        # Aide-soignants pour transport long (45 min)
+        as_dispo = [s for s in staff_dispo if s.type == TypeStaff.AIDE_SOIGNANT]
+
+        # CAS NORMAL : Transport direct par AS (45 min)
+        # Sécurité : On ne lance un 45 min que s'il reste au moins 2 personnes pour la surveillance
+        if as_dispo and len(staff_dispo) >= 3:
+            res = tools.demarrer_transport_unite(self.state, p.id, as_dispo[0].id)
+            if res.get("success"):
+                return f"🚑 {p.prenom} -> {p.unite_cible} (AS, 45 min)"
+
+        # CAS DE SECOURS : Retour en salle d'attente (5 min)
+        # Si AS occupés ou risque pour la surveillance, on libère la consultation
+        if staff_dispo:
+            agent = staff_dispo[0]
+            # On utilise l'outil de secours (5 min de trajet)
+            res = tools.retourner_patient_salle_attente(self.state, p.id, agent.id)
+            if res.get("success"):
+                return f"🔄 {p.prenom} replacé en salle (Secours, 5 min) : AS occupés"
+            
+        return None
+    
+    def _gerer_consultation(self) -> Optional[str]:
+        """Gère l'entrée en consultation si au moins 1 soignant reste en surveillance."""
+        if not self.state.consultation.est_libre(): return None
         
-        for alert in surveillance_alerts:
-            alertes.append(f"⚠️ {alert}")
+        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
+        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
+
+        if len(staff_dispo) < 2:
+            return "⏳ Sécurité : Personnel retenu pour surveillance"
+
+        queue = self.state.get_queue_consultation()
+        if queue and staff_dispo:
+            res = tools.demarrer_transport_consultation(self.state, queue[0].id, staff_dispo[0].id)
+            if res.get("success"):
+                return f"🚑 {queue[0].prenom} vers consultation"
+        return None
+
+    def _gerer_surveillance(self) -> list[str]:
+        """Assure la ronde de surveillance toutes les 15 min."""
+        actions = []
+        staff_dispo = self.state.get_staff_disponible(TypeStaff.INFIRMIERE_MOBILE) + \
+                      self.state.get_staff_disponible(TypeStaff.AIDE_SOIGNANT)
+
+        for salle in self.state.salles_attente:
+            if salle.temps_sans_surveillance(self.state.current_time) > 10 and len(salle.patients) > 0:
+                en_poste = any(s.salle_surveillee == salle.id and not s.en_transport for s in self.state.staff)
+                if not en_poste and staff_dispo:
+                    agent = staff_dispo.pop(0)
+                    res = tools.assigner_surveillance(self.state, agent.id, salle.id)
+                    if res.get("success"):
+                        actions.append(f"📋 {agent.id} affecté à {salle.id}")
+        return actions
+
+    def _gerer_sortie_consultation(self) -> Optional[str]:
+        """Détermine si la consultation est finie et décide de la suite."""
+        if self.state.consultation.est_libre(): 
+            return None
         
-        return alertes
-
-# ✅ Charger l'agent UNE SEULE FOIS avec indicateur de progression
-if not st.session_state.agent_loaded:
-    with st.spinner("🔄 Chargement du moteur RAG et de l'agent (première fois seulement)..."):
-        st.session_state.agent = EmergencyAgent(st.session_state.state)
-        st.session_state.agent_loaded = True
-        st.success("✅ Agent et RAG chargés avec succès !")
-        time.sleep(1)
-        st.rerun()
-
+        pid = self.state.consultation.patient_id
+        patient = self.state.patients.get(pid)
+    
+        # Calcul de la durée écoulée
+        debut = self.state.consultation.debut_consultation
+        if not debut: return None
+        duree_ecoulee = (self.state.current_time - debut).total_seconds() / 60
+    
+        # Durée minimale selon les règles (ex: VERT 10-25min)
+        duree_min = 10 if patient.gravite == Gravite.VERT else 20
+    
+        if duree_ecoulee >= duree_min:
+            # Logique de décision simplifiée
+            # Si VERT ou GRIS -> Maison, sinon -> Une unité au hasard
+            destination = UniteCible.MAISON if patient.gravite in [Gravite.VERT, Gravite.GRIS] else UniteCible.CARDIO
+        
+            res = tools.terminer_consultation(self.state, pid, destination)
+            if res.get("success"):
+                return f"✅ Consultation terminée : {patient.prenom} orienté vers {destination}"
+        return None
 # ========== FONCTIONS UTILITAIRES ==========
 
 def get_state():
@@ -261,10 +222,31 @@ def gen_patient():
     }
 
 def add_patient(data):
+    """Ajoute un patient et l'assigne à une salle."""
     p = Patient(**data)
     r = tools.ajouter_patient(st.session_state.state, p)
+    
     if r.get("success"):
-        tools.assigner_salle_attente(st.session_state.state, p.id)
+        # ✅ Assigner à une salle d'attente
+        # Vérifier que la fonction existe
+        if hasattr(tools, 'assigner_salle_attente'):
+            salle_result = tools.assigner_salle_attente(st.session_state.state, p.id)
+            
+            if salle_result.get("success"):
+                salle_id = salle_result.get("salle_id")
+                add_event(f"Patient {p.prenom} assigné à {salle_id}", "🏥")
+            else:
+                add_event(f"⚠️ {p.prenom} : {salle_result.get('error')}", "⚠️")
+        else:
+            # Fallback : assigner manuellement
+            for salle in st.session_state.state.salles_attente:
+                if not salle.est_pleine():
+                    salle.patients.append(p.id)
+                    p.statut = StatutPatient.SALLE_ATTENTE
+                    p.salle_attente_id = salle.id
+                    add_event(f"Patient {p.prenom} assigné à {salle.id}", "🏥")
+                    break
+    
     return r
 
 # ========== SIDEBAR ==========
@@ -290,6 +272,8 @@ with st.sidebar:
         st.session_state.state = EmergencyState()
         st.session_state.temps = 0
         st.session_state.events = []
+        st.session_state.agent_loaded = False
+        st.session_state.agent = None
         add_event("Système réinitialisé", "✅")
         time.sleep(0.5)
         st.rerun()
@@ -381,6 +365,78 @@ if alertes:
     for alerte in alertes:
         st.error(alerte)
 
+# ========== BANDEAU PERSONNEL ==========
+st.subheader("👨‍⚕️ Suivi du Personnel en Temps Réel")
+
+staff_data = etat.get("staff", [])
+
+medecins = [s for s in staff_data if s.get("type") == "médecin"]
+inf_fixes = [s for s in staff_data if s.get("type") == "infirmier(ere)_fixe"]
+inf_mobiles = [s for s in staff_data if s.get("type") == "infirmier(ere)_mobile"]
+aides_soignants = [s for s in staff_data if s.get("type") == "aide_soignant"]
+# Metric 
+patients = etat.get("patients", {})
+nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
+nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
+
+# Définition de la variable manquante
+nb_consultation = 1 if etat.get("consultation", {}).get("patient_id") else 0
+
+nb_en_transport = len([p for p in patients.values() if "transport" in p.get("statut", "")])
+col_med, col_if, col_im, col_as = st.columns(4)
+
+with col_med:
+    st.markdown("**👨‍⚕️ Médecins**")
+    # Utilisation de staff_data pour être cohérent avec le reste du bloc
+    medecin_data = next((s for s in staff_data if s.get("type") == "médecin"), None)
+    
+    if medecin_data:
+        # Vérification via l'état de la consultation
+        est_occupe = nb_consultation > 0
+        couleur = "🔴" if est_occupe else "🟢"
+        label = "en consultation" if est_occupe else "libre"
+        st.caption(f"{couleur} {medecin_data.get('id')}: {label}")
+
+with col_if:
+    st.markdown("**💉 Inf. Fixes**")
+    for staff in inf_fixes:
+        loc = staff.get("localisation", "repos")
+        st.caption(f"📍 {staff.get('id')}: {loc}")
+
+with col_im:
+    st.markdown("**🏃 Inf. Mobiles**")
+    for staff in inf_mobiles:
+        # Priorité d'affichage : Transport > Surveillance > Attente
+        if staff.get("en_transport"):
+            status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
+        elif staff.get("salle_surveillee"):
+            status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
+        else:
+            status_text = "⏳ En attente de mission"
+        
+        dispo = "🟢" if staff.get("disponible") else "🔴"
+        st.caption(f"{dispo} {staff.get('id')}: {status_text}")
+
+with col_as:
+    st.markdown("**🤝 Aides-Soignants**")
+    for staff in aides_soignants:
+        # Les aides-soignants ont maintenant les mêmes capacités d'affichage
+        if staff.get("en_transport"):
+            status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
+        elif staff.get("salle_surveillee"):
+            status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
+        else:
+            status_text = "⏳ En attente de mission"
+            
+        # On garde le timer de sécurité (60 min max hors service)
+        temps_restant = staff.get("temps_disponible_restant")
+        timer = f" ⏱️ {temps_restant}min" if temps_restant and temps_restant > 0 else ""
+        
+        dispo = "🟢" if staff.get("disponible") else "🔴"
+        st.caption(f"{dispo} {staff.get('id')}: {status_text}{timer}")
+
+st.divider()
+
 # Métriques
 col1, col2, col3, col4, col5 = st.columns(5)
 
@@ -470,12 +526,12 @@ with col_right:
     staff = etat.get("staff", [])
     
     med_dispo = sum(1 for s in staff if s.get("type") == "médecin" and s.get("disponible"))
-    inf_dispo = sum(1 for s in staff if s.get("type") == "infirmière_mobile" and s.get("disponible"))
+    inf_dispo = sum(1 for s in staff if s.get("type") == "infirmier(ere)_mobile" and s.get("disponible"))
     aide_dispo = sum(1 for s in staff if s.get("type") == "aide_soignant" and s.get("disponible"))
     
     st.markdown(f"**👨‍⚕️ Médecins:** {med_dispo} dispo")
-    st.markdown(f"**🩺 Infirmières:** {inf_dispo} dispo")
-    st.markdown(f"**🚑 Aides:** {aide_dispo} dispo")
+    st.markdown(f"**🩺 infirmier(ère):** {inf_dispo} dispo")
+    st.markdown(f"**🚑 Aides-soignant(e):** {aide_dispo} dispo")
     
     st.divider()
     
@@ -489,37 +545,31 @@ with col_right:
         st.info("Aucun événement")
 
 # ========== CYCLE AGENT ==========
+# ========== CYCLE AGENT ==========
 
 if st.session_state.running and st.session_state.agent_enabled:
+    
+    # ÉTAPE A : Créer l'agent s'il n'existe pas ENCORE
+    if st.session_state.agent is None:
+        st.session_state.agent = EmergencyAgent(st.session_state.state)
+        st.session_state.agent_loaded = True
+
+    # ÉTAPE B : Faire avancer le temps
     st.session_state.temps += 1
     tools.tick(st.session_state.state, 1)
     
-    # ✅ L'agent est déjà chargé, juste mettre à jour son state
+    # ÉTAPE C : Donner l'état à l'agent (Maintenant il n'est plus None)
     st.session_state.agent.state = st.session_state.state
+    
+    # ÉTAPE D : Lancer les décisions
     actions = st.session_state.agent.cycle_orchestration()
     
     for action in actions:
         if action:
-            # Déterminer l'emoji
-            if "transporté en consultation" in action:
-                emoji = "🚑"
-            elif "Consultation terminée" in action:
-                emoji = "✅"
-            elif "transporté vers" in action:
-                emoji = "🏥"
-            elif "saturée" in action or "surveillance" in action:
-                emoji = "⚠️"
-            else:
-                emoji = "ℹ️"
-            
+            # Choix de l'emoji selon l'action
+            emoji = "🚑" if "transport" in action.lower() else "✅"
+            if "📋" in action: emoji = "📋"
             add_event(action, emoji)
     
     time.sleep(st.session_state.agent_speed)
-    st.rerun()
-
-elif st.session_state.running and not st.session_state.agent_enabled:
-    # Simulation sans agent (juste incrémente le temps)
-    st.session_state.temps += 1
-    tools.tick(st.session_state.state, 1)  # ✅ Faire avancer le temps simulé
-    time.sleep(1)
     st.rerun()

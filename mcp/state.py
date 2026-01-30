@@ -64,8 +64,8 @@ class StatutPatient(str, Enum):
 class TypeStaff(str, Enum):
     """Types de personnel."""
     MEDECIN = "médecin"
-    INFIRMIERE_FIXE = "infirmière_fixe"
-    INFIRMIERE_MOBILE = "infirmière_mobile"
+    INFIRMIERE_FIXE = "infirmier(ere)_fixe"
+    INFIRMIERE_MOBILE = "infirmier(ere)_mobile"
     AIDE_SOIGNANT = "aide_soignant"
 
 
@@ -173,29 +173,37 @@ class Staff(BaseModel):
     destination_transport: Optional[str] = None
     fin_transport_prevue: Optional[datetime] = None
 
-    def peut_partir(self, now:datetime) -> bool:
+    # Dans state.py, modifiez la méthode peut_partir
+    def peut_partir(self, now: datetime) -> bool:
         """Vérifie si le staff peut quitter sa position."""
+        # L'infirmière de triage est statique par définition
         if self.type == TypeStaff.INFIRMIERE_FIXE:
-            return False  # Ne bouge JAMAIS
-        
+            return False
+    
+        # Un staff en plein transport ne peut pas être réassigné
+        if not self.disponible or self.en_transport:
+            return False
+
+        # Réduction de la contrainte temporelle de 15 min à 5 min pour la simulation
         if self.occupe_depuis:
             temps_occupe = (now - self.occupe_depuis).total_seconds() / 60
-            if temps_occupe < 15:  # Contrainte 15 min
+            if temps_occupe < 5: 
                 return False
-        return self.disponible
+            
+        return True
 
     def temps_disponible_restant(self, now: datetime) -> Optional[int]:
-        """Minutes restantes avant de devoir revenir (aides-soignants) selon `now`."""
+        """Minutes restantes avant de devoir revenir (pour aides-soignants)."""
         if self.type != TypeStaff.AIDE_SOIGNANT or not self.doit_revenir_avant:
             return None
+    
         delta = (self.doit_revenir_avant - now).total_seconds() / 60
         return max(0, int(delta))
 
-
 class EmergencyState:
     """État global du service des urgences."""
-
     def __init__(self):
+
         self.salles_attente = [
             SalleAttente(id="salle_attente_1", capacite=5),
             SalleAttente(id="salle_attente_2", capacite=10),
@@ -207,15 +215,13 @@ class EmergencyState:
         self.unites = [
             Unite(nom=UniteCible.SOINS_CRITIQUES, capacite=5),
             Unite(nom=UniteCible.CARDIO, capacite=10),
-            Unite(nom=UniteCible.PNEUMO, capacite=5),
+            Unite(nom=UniteCible.PNEUMO, capacite=10),
             Unite(nom=UniteCible.NEURO, capacite=8),
-            Unite(nom=UniteCible.ORTHO, capacite=7),
+            Unite(nom=UniteCible.ORTHO, capacite=10),
         ]
 
         self.staff = self._init_staff()
         self.patients: dict[str, Patient] = {}
-
-        # ✅ horloge simulée centrale
         self.current_time = datetime.now()
 
 
@@ -223,21 +229,21 @@ class EmergencyState:
         """Initialise le personnel selon les contraintes."""
         return [
             # 1 médecin fixe en consultation
-            Staff(id="Medecin 1", type=TypeStaff.MEDECIN, localisation="consultation"),
+            Staff(id="Medecin", type=TypeStaff.MEDECIN, localisation="consultation"),
             # 1 infirmière fixe au triage (ne bouge JAMAIS)
-            Staff(id="Infirmière Triage", type=TypeStaff.INFIRMIERE_FIXE),
+            Staff(id="Infirmier(ère) Triage", type=TypeStaff.INFIRMIERE_FIXE),
             # 2 infirmières mobiles (B & C)
             Staff(
-                id="Infirmière 2",
+                id="Infirmier(ère) B",
                 type=TypeStaff.INFIRMIERE_MOBILE
             ),
             Staff(
-                id="Infirmière 3",
+                id="Infirmier(ère) C",
                 type=TypeStaff.INFIRMIERE_MOBILE
             ),
             # 2 aides-soignants
-            Staff(id="Aide Soignant 1", type=TypeStaff.AIDE_SOIGNANT),
-            Staff(id="Aide Soignant 2", type=TypeStaff.AIDE_SOIGNANT),
+            Staff(id="Aide Soignant(e) A", type=TypeStaff.AIDE_SOIGNANT),
+            Staff(id="Aide Soignant(e) B", type=TypeStaff.AIDE_SOIGNANT),
         ]
 
     def get_queue_consultation(self) -> list[Patient]:
@@ -271,13 +277,22 @@ class EmergencyState:
         return next((u for u in self.unites if u.nom == nom), None)
 
     def verifier_surveillance_salles(self) -> list[str]:
-        """Vérifie les salles sans surveillance >15 min."""
+        """Vérifie les salles sans surveillance > 15 min."""
         now = self.current_time
         alertes = []
         for salle in self.salles_attente:
-            mins = salle.temps_sans_surveillance(now)
-            if mins > 15 and len(salle.patients) > 0:
-                alertes.append(f"⚠️ {salle.id} sans surveillance depuis {mins} min")
+            # Une salle est surveillée si un staff a cet ID en 'salle_surveillee' 
+            # ET qu'il n'est pas en cours de transport
+            surveillee = any(
+                s.salle_surveillee == salle.id and not s.en_transport 
+                for s in self.staff
+            )
+        
+            if not surveillee:
+                mins = salle.temps_sans_surveillance(now)
+                # Règle critique des 15 minutes
+                if mins > 15 and len(salle.patients) > 0:
+                    alertes.append(f"⚠️ {salle.id} sans surveillance depuis {mins} min")
         return alertes
 
     def to_dict(self) -> dict:
@@ -305,8 +320,10 @@ class EmergencyState:
 
     @staticmethod
     def _serialize_staff(s: Staff) -> dict:
-        """Sérialise un staff."""
+        """Sérialise un membre du personnel pour l'API."""
         data = s.model_dump()
+        # Ajout dynamique du temps restant pour l'agent
+        # Note: 'now' doit être passé ou récupéré du state
         for key, value in data.items():
             if isinstance(value, datetime):
                 data[key] = value.isoformat()

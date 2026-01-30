@@ -290,14 +290,16 @@ Timestamp: {datetime.now().strftime("%H:%M:%S")}
 {contexte_medical}
 
 === TES OUTILS DISPONIBLES (MCP) ===
-1. assigner_salle_attente(patient_id, salle_id=None)
-2. assigner_surveillance(staff_id, salle_id)
-3. demarrer_transport_consultation(patient_id, staff_id)
-4. finaliser_transport_consultation(patient_id)
-5. terminer_consultation(patient_id, unite_cible)
-   - Valeurs autorisées pour unite_cible : "Soins Critiques", "Cardiologie", "Pneumologie", "Neurologie", "Orthopédie", "Maison"
-6. demarrer_transport_unite(patient_id, staff_id)
-7. finaliser_transport_unite(patient_id)
+1. ajouter_patient(id, prenom, nom, gravite, symptomes, age)
+2. assigner_salle_attente(patient_id, salle_id=None)
+3. assigner_surveillance(staff_id, salle_id)
+4. verifier_et_gerer_surveillance() -> Gère auto les salles vides
+5. demarrer_transport_consultation(patient_id, staff_id)
+6. finaliser_transport_consultation(patient_id)
+7. terminer_consultation(patient_id, unite_cible)
+8. sortir_patient(patient_id) -> Pour les retours à domicile
+9. demarrer_transport_unite(patient_id, staff_id)
+10. finaliser_transport_unite(patient_id)
 
 === DIRECTIVES DE DÉCISION ===
 1. Respecte STRICTEMENT la gravité indiquée par le protocole RAG.
@@ -353,6 +355,9 @@ Réponds UNIQUEMENT avec un JSON. Le champ "raisonnement" doit être sur UNE SEU
         Returns:
             Rapport d'exécution
         """
+        match = re.search(r"\{.*\}", decision_json, re.DOTALL)
+        if match:
+            decision_json = match.group()
         try:
             # Essayer de parser directement
             decision = json.loads(decision_json)
