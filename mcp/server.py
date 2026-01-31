@@ -39,12 +39,13 @@ try:
     # Comme on a fixé le sys.path, Python peut trouver les modules voisins
     # Note : Si 'tools' et 'state' sont dans le même dossier que server.py,
     # l'import direct fonctionne. S'ils étaient ailleurs, on ferait 'from mcp import tools'
-    import tools
+    from controllers.emergency_controller import EmergencyController
     from state import EmergencyState, Patient, Gravite, UniteCible
 except ImportError as e:
     print(f"Erreur critique d'import local : {e}", file=sys.stderr)
     print(f"   Vérifiez que 'tools.py' et 'state.py' sont bien dans : {CURRENT_FILE.parent}", file=sys.stderr)
     sys.exit(1)
+
 
 
 # Configuration des logs
@@ -62,6 +63,7 @@ app.add_middleware(
 )
 
 state = EmergencyState()
+controller = EmergencyController(state)
 
 # model pydantic
 class PatientRequest(BaseModel):
@@ -125,91 +127,91 @@ def root() -> Dict[str, Any]:
 
 # --- ARRIVEE ET TRIAGE ---
 
-@app.post("/tools/ajouter_patient")
+@app.post("/controller/ajouter_patient")
 def endpoint_ajouter_patient(req: PatientRequest) -> Dict[str, Any]:
     """Ajoute un nouveau patient au système."""
     patient = Patient(**req.model_dump())
-    return tools.ajouter_patient(state, patient)
+    return controller.ajouter_patient(state, patient)
 
 
-@app.post("/tools/assigner_salle_attente")
+@app.post("/controller/assigner_salle_attente")
 def endpoint_assigner_salle(req: AssignerSalleRequest) -> Dict[str, Any]:
     """Assigne un patient à une salle d'attente."""
-    return tools.assigner_salle_attente(state, req.patient_id, req.salle_id)
+    return controller.assigner_salle_attente(state, req.patient_id, req.salle_id)
 
 
-@app.post("/tools/assigner_surveillance")
+@app.post("/contreoller/assigner_surveillance")
 def endpoint_assigner_surveillance(req: SurveillanceRequest) -> Dict[str, Any]:
     """Assigne la surveillance d'une salle à un staff."""
-    return tools.assigner_surveillance(state, req.staff_id, req.salle_id)
+    return controller.assigner_surveillance(state, req.staff_id, req.salle_id)
 
 
 # --- TRANSPORTS EN CONSULTATION ---
 
-@app.post("/tools/demarrer_transport_consultation")
+@app.post("/controller/demarrer_transport_consultation")
 def endpoint_transport_consultation(req: TransportConsultationRequest) -> Dict[str, Any]:
     """Démarre le transport d'un patient vers la consultation."""
-    return tools.demarrer_transport_consultation(state, req.patient_id, req.staff_id)
+    return controller.demarrer_transport_consultation(state, req.patient_id, req.staff_id)
 
 
-@app.post("/tools/finaliser_transport_consultation")
+@app.post("/controller/finaliser_transport_consultation")
 def endpoint_finaliser_transport_consultation(patient_id: str) -> Dict[str, Any]:
     """Finalise l'arrivée en consultation (après 5 min)."""
-    return tools.finaliser_transport_consultation(state, patient_id)
+    return controller.finaliser_transport_consultation(state, patient_id)
 
-@app.post("/tools/terminer_consultation")
+@app.post("/controller/terminer_consultation")
 def endpoint_terminer_consultation(req: TerminerConsultationRequest) -> Dict[str, Any]:
     """Termine la consultation et définit la destination."""
-    return tools.terminer_consultation(state, req.patient_id, req.unite_cible)
+    return controller.terminer_consultation(state, req.patient_id, req.unite_cible)
 
 
 # --- RETOUR SALLE ---
 
-@app.post("/tools/retourner_salle_attente")
+@app.post("/controller/retourner_salle_attente")
 def endpoint_retour_salle(req: RetourSalleRequest) -> Dict[str, Any]:
     """Retourne un patient en salle d'attente (si pas de transport dispo)."""
-    return tools.retourner_patient_salle_attente(
+    return controller.retourner_patient_salle_attente(
         state, req.patient_id, req.staff_id, req.salle_id
     )
 
 # --- TRANSPORT UNITÉ ---
 
-@app.post("/tools/demarrer_transport_unite")
+@app.post("/controller/demarrer_transport_unite")
 def endpoint_transport_unite(req: TransportUniteRequest) -> Dict[str, Any]:
     """Démarre le transport d'un patient vers une unité."""
-    return tools.demarrer_transport_unite(state, req.patient_id, req.staff_id)
+    return controller.demarrer_transport_unite(state, req.patient_id, req.staff_id)
 
 
-@app.post("/tools/finaliser_transport_unite")
+@app.post("/controller/finaliser_transport_unite")
 def endpoint_finaliser_transport_unite(patient_id: str):
     """Finalise l'arrivée dans une unité."""
-    return tools.finaliser_transport_unite(state, patient_id)
+    return controller.finaliser_transport_unite(state, patient_id)
 
 # --- INFORMATIONS ---
 
-@app.get("/tools/get_etat_systeme")
+@app.get("/controller/get_etat_systeme")
 def endpoint_get_etat() -> Dict[str, Any]:
     """Retourne l'état complet du système."""
-    return tools.get_etat_systeme(state)
+    return controller.get_etat_systeme(state)
 
 
-@app.get("/tools/get_prochain_patient_consultation")
+@app.get("/controller/get_prochain_patient_consultation")
 def endpoint_prochain_consultation() -> Dict[str, Any]:
     """Retourne le prochain patient à appeler en consultation."""
-    result = tools.get_prochain_patient_consultation(state)
+    result = controller.get_prochain_patient_consultation(state)
     return result if result else {"message": "Aucun patient en attente"}
 
 
-@app.get("/tools/get_prochain_patient_transport")
+@app.get("/controller/get_prochain_patient_transport")
 def endpoint_prochain_transport():
     """Retourne le prochain patient à transporter."""
-    result = tools.get_prochain_patient_transport(state)
+    result = controller.get_prochain_patient_transport(state)
     return result if result else {"message": "Aucun patient en attente de transport"}
 
-@app.get("/tools/get_alertes")
+@app.get("/controller/get_alertes")
 def endpoint_alertes():
     """Retourne les alertes du système."""
-    return tools.get_alertes(state)
+    return controller.get_alertes(state)
 
 # ==================== ENDPOINT POUR RESET ====================
 

@@ -23,7 +23,7 @@ import random
 
 # Imports
 from mcp.state import EmergencyState, Patient, Gravite, UniteCible, StatutPatient, TypeStaff
-import mcp.tools as tools
+from mcp.controllers.emergency_controller import EmergencyController
 from rag.engine import HospitalRAGEngine
 
 st.set_page_config(page_title="🏥 Emergency Dashboard + Agent", layout="wide")
@@ -35,9 +35,14 @@ if 'state' not in st.session_state:
     st.session_state.temps = 0
     st.session_state.running = False
     st.session_state.events = []
+    st.session_state.temps = 0
     st.session_state.agent_enabled = True  # Agent activé par défaut
     st.session_state.agent_speed = 1.0  # Vitesse agent
     st.session_state.agent = None  # Agent sera chargé avec le RAG
+    if 'controller' not in st.session_state:
+            st.session_state.controller = EmergencyController(st.session_state.state)
+    # Utilisation pour l'agent
+    controller = st.session_state.controller
 
 # Charger l'agent une seule fois au démarrage
 if 'agent_loaded' not in st.session_state:
@@ -47,7 +52,8 @@ def add_event(msg, emoji="ℹ️"):
     st.session_state.events.append({
         "time": st.session_state.temps,
         "msg": msg,
-        "emoji": emoji
+        "emoji": emoji,
+        
     })
     if len(st.session_state.events) > 30:
         st.session_state.events = st.session_state.events[-30:]
@@ -57,12 +63,10 @@ def add_event(msg, emoji="ℹ️"):
 class EmergencyAgent:
     """Agent IA orchestrant les flux en respectant la sécurité et les priorités."""
     
-    def __init__(self, state: EmergencyState):
+    def __init__(self, state: EmergencyState, controller):
         self.state = state
-<<<<<<< HEAD
-=======
+        self.controller = controller
         # Mode simulation : rapide, sans ML, avec cache embeddings
->>>>>>> 24a8c08d3addbf99c449b5533ab8c54d28ebea65
         self.rag_engine = HospitalRAGEngine(mode="simulation")
     
     def cycle_orchestration(self) -> list[str]:
@@ -100,10 +104,10 @@ class EmergencyAgent:
                 if self.state.current_time >= staff.fin_transport_prevue:
                     pid = staff.patient_transporte_id
                     if staff.destination_transport == "consultation":
-                        tools.finaliser_transport_consultation(self.state, pid)
+                        self.controller.finaliser_transport_consultation(pid)
                         actions.append(f"✅ Arrivée en consultation : {pid}")
                     else:
-                        tools.finaliser_transport_unite(self.state, pid)
+                        self.controller.finaliser_transport_unite(pid)
                         p = self.state.patients.get(pid)
                         actions.append(f"🏁 {p.prenom if p else pid} arrivé en unité")
         return actions
@@ -125,7 +129,7 @@ class EmergencyAgent:
         # CAS NORMAL : Transport direct par AS (45 min)
         # Sécurité : On ne lance un 45 min que s'il reste au moins 2 personnes pour la surveillance
         if as_dispo and len(staff_dispo) >= 3:
-            res = tools.demarrer_transport_unite(self.state, p.id, as_dispo[0].id)
+            res = self.controller.demarrer_transport_unite(p.id, as_dispo[0].id)
             if res.get("success"):
                 return f"🚑 {p.prenom} -> {p.unite_cible} (AS, 45 min)"
 
@@ -134,7 +138,7 @@ class EmergencyAgent:
         if staff_dispo:
             agent = staff_dispo[0]
             # On utilise l'outil de secours (5 min de trajet)
-            res = tools.retourner_patient_salle_attente(self.state, p.id, agent.id)
+            res = self.controller.retourner_patient_salle_attente(self.state, p.id, agent.id)
             if res.get("success"):
                 return f"🔄 {p.prenom} replacé en salle (Secours, 5 min) : AS occupés"
             
@@ -152,9 +156,9 @@ class EmergencyAgent:
 
         queue = self.state.get_queue_consultation()
         if queue and staff_dispo:
-            res = tools.demarrer_transport_consultation(self.state, queue[0].id, staff_dispo[0].id)
+            res = self.controller.demarrer_transport_consultation(queue[0].id, staff_dispo[0].id)
             if res.get("success"):
-                return f"🚑 {queue[0].prenom} vers consultation"
+                return f"🚑 {queue[0].id} ({queue[0].prenom}) vers consultation"
         return None
 
     def _gerer_surveillance(self) -> list[str]:
@@ -168,7 +172,7 @@ class EmergencyAgent:
                 en_poste = any(s.salle_surveillee == salle.id and not s.en_transport for s in self.state.staff)
                 if not en_poste and staff_dispo:
                     agent = staff_dispo.pop(0)
-                    res = tools.assigner_surveillance(self.state, agent.id, salle.id)
+                    res = self.controller.assigner_surveillance(agent.id, salle.id)
                     if res.get("success"):
                         actions.append(f"📋 {agent.id} affecté à {salle.id}")
         return actions
@@ -194,7 +198,7 @@ class EmergencyAgent:
             # Si VERT ou GRIS -> Maison, sinon -> Une unité au hasard
             destination = UniteCible.MAISON if patient.gravite in [Gravite.VERT, Gravite.GRIS] else UniteCible.CARDIO
         
-            res = tools.terminer_consultation(self.state, pid, destination)
+            res = self.controller.terminer_consultation(pid, destination)
             if res.get("success"):
                 return f"✅ Consultation terminée : {patient.prenom} orienté vers {destination}"
         return None
@@ -226,32 +230,23 @@ def gen_patient():
     }
 
 def add_patient(data):
-    """Ajoute un patient et l'assigne à une salle."""
+    controller = st.session_state.controller
     p = Patient(**data)
-    r = tools.ajouter_patient(st.session_state.state, p)
-    
-    if r.get("success"):
-        # ✅ Assigner à une salle d'attente
-        # Vérifier que la fonction existe
-        if hasattr(tools, 'assigner_salle_attente'):
-            salle_result = tools.assigner_salle_attente(st.session_state.state, p.id)
-            
-            if salle_result.get("success"):
-                salle_id = salle_result.get("salle_id")
-                add_event(f"Patient {p.prenom} assigné à {salle_id}", "🏥")
-            else:
-                add_event(f"⚠️ {p.prenom} : {salle_result.get('error')}", "⚠️")
+
+    r = controller.ajouter_patient(p)
+
+    if r and r.get("success"):
+        salle_result = controller.assigner_salle_attente(p.id)
+        if salle_result.get("success"):
+            add_event(f"Patient {p.id} ({p.prenom}) assigné à {salle_result.get('salle_id')}", "🏥")
         else:
-            # Fallback : assigner manuellement
-            for salle in st.session_state.state.salles_attente:
-                if not salle.est_pleine():
-                    salle.patients.append(p.id)
-                    p.statut = StatutPatient.SALLE_ATTENTE
-                    p.salle_attente_id = salle.id
-                    add_event(f"Patient {p.prenom} assigné à {salle.id}", "🏥")
-                    break
-    
+            add_event(f"⚠️ {p.prenom} : {salle_result.get('error')}", "⚠️")
+
     return r
+
+
+
+
 
 # ========== SIDEBAR ==========
 
@@ -321,7 +316,7 @@ with st.sidebar:
         r = add_patient(p)
         if r.get("success"):
             emoji_map = {Gravite.ROUGE: "🔴", Gravite.JAUNE: "🟡", Gravite.VERT: "🟢"}
-            add_event(f"{p['prenom']} {p['nom']} ajouté", emoji_map.get(p['gravite'], "👤"))
+            add_event( f"{p['id']} ({p['prenom']} {p['nom']}) ajouté", emoji_map.get(p['gravite'], "👤"))
             st.success(f"✅ {p['prenom']} ajouté")
         time.sleep(0.3)
         st.rerun()
@@ -359,7 +354,7 @@ with st.sidebar:
 
 # ========== MAIN ==========
 
-st.title("🏥 Emergency Management avec Agent IA")
+st.title("🏥 Emergency Management")
 
 etat = get_state()
 
@@ -370,7 +365,7 @@ if alertes:
         st.error(alerte)
 
 # ========== BANDEAU PERSONNEL ==========
-st.subheader("👨‍⚕️ Suivi du Personnel en Temps Réel")
+st.subheader("👨‍⚕️ Suivi du Personnel")
 
 staff_data = etat.get("staff", [])
 
@@ -393,18 +388,19 @@ with col_med:
     st.markdown("**👨‍⚕️ Médecins**")
     # Utilisation de staff_data pour être cohérent avec le reste du bloc
     medecin_data = next((s for s in staff_data if s.get("type") == "médecin"), None)
-    
+    patient_en_consultation = etat.get("consultation", {}).get("patient_id")
     if medecin_data:
-        # Vérification via l'état de la consultation
-        est_occupe = nb_consultation > 0
-        couleur = "🔴" if est_occupe else "🟢"
-        label = "en consultation" if est_occupe else "libre"
-        st.caption(f"{couleur} {medecin_data.get('id')}: {label}")
+        if patient_en_consultation:
+            st.caption(
+                f"🔴 {medecin_data.get('id')} — en consultation avec "
+                f"`{patient_en_consultation}`")
+        else:
+            st.caption(f"🟢 {medecin_data.get('id')} — libre")
 
 with col_if:
     st.markdown("**💉 Inf. Fixes**")
     for staff in inf_fixes:
-        loc = staff.get("localisation", "repos")
+        loc = staff.get("localisation", "Triage")
         st.caption(f"📍 {staff.get('id')}: {loc}")
 
 with col_im:
@@ -507,7 +503,7 @@ with col_left:
                 temps = 0
             
             exc = " ⚠️ **>360min!**" if temps > 360 and g == "VERT" else ""
-            st.write(f"{i}. {emoji} **{p.get('prenom')} {p.get('nom')}** - {temps}min{exc}")
+            st.write(f"{i}. {emoji} **{p.get('prenom')} {p.get('nom')}** (`{pid}`) - {temps}min{exc}")
         
         if len(queue) > 5:
             st.caption(f"... et {len(queue) - 5} autres")
@@ -525,29 +521,9 @@ with col_left:
             st.write(f"{i}. {p.get('prenom')} {p.get('nom')} → {unite}")
 
 with col_right:
-    # Personnel
-    st.subheader("👥 Personnel")
-    staff = etat.get("staff", [])
-    
-    med_dispo = sum(1 for s in staff if s.get("type") == "médecin" and s.get("disponible"))
-    inf_dispo = sum(1 for s in staff if s.get("type") == "infirmier(ere)_mobile" and s.get("disponible"))
-    aide_dispo = sum(1 for s in staff if s.get("type") == "aide_soignant" and s.get("disponible"))
-    
-    st.markdown(f"**👨‍⚕️ Médecins:** {med_dispo} dispo")
-<<<<<<< HEAD
-    st.markdown(f"**🩺 infirmier(ère):** {inf_dispo} dispo")
-    st.markdown(f"**🚑 Aides-soignant(e):** {aide_dispo} dispo")
-=======
-    st.markdown(f"**🩺 Infirmières:** {inf_dispo} dispo")
-    st.markdown(f"**🚑 Aides soignantes:** {aide_dispo} dispo")
->>>>>>> 24a8c08d3addbf99c449b5533ab8c54d28ebea65
-    
-    st.divider()
-    
-    # Log événements
     st.subheader("📋 Log Événements")
     if st.session_state.events:
-        with st.container(height=300):
+        with st.container(height=600):
             for evt in reversed(st.session_state.events[-15:]):
                 st.text(f"[T+{evt['time']:03d}] {evt['emoji']} {evt['msg']}")
     else:
@@ -560,13 +536,13 @@ if st.session_state.running and st.session_state.agent_enabled:
     
     # ÉTAPE A : Créer l'agent s'il n'existe pas ENCORE
     if st.session_state.agent is None:
-        st.session_state.agent = EmergencyAgent(st.session_state.state)
+        st.session_state.agent = EmergencyAgent( st.session_state.state, st.session_state.controller)
         st.session_state.agent_loaded = True
 
     # ÉTAPE B : Faire avancer le temps
     st.session_state.temps += 1
-    tools.tick(st.session_state.state, 1)
-    
+    st.session_state.controller.tick(1)
+
     # ÉTAPE C : Donner l'état à l'agent (Maintenant il n'est plus None)
     st.session_state.agent.state = st.session_state.state
     

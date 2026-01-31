@@ -118,7 +118,7 @@ class EmergencyAgent:
         """
         try:
             response = requests.post(
-                f"{self.mcp_base_url}/tools/{outil}", json=params, timeout=10
+                f"{self.mcp_base_url}/controller/{outil}", json=params, timeout=10
             )
             return (
                 response.json()
