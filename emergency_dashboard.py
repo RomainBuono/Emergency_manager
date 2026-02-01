@@ -25,6 +25,7 @@ import random
 from mcp.state import EmergencyState, Patient, Gravite, UniteCible, StatutPatient, TypeStaff
 from mcp.controllers.emergency_controller import EmergencyController
 from rag.engine import HospitalRAGEngine
+from monitoring.monitoring import monitor
 
 # Import Chatbot
 try:
@@ -86,43 +87,193 @@ def add_event(msg, emoji="ℹ️"):
     if len(st.session_state.events) > 30:
         st.session_state.events = st.session_state.events[-30:]
 
-# ========== AGENT DE DÉCISION ==========
+# ========== AGENT DE DÉCISION LLM ==========
+
+import os
+import json as json_module
+from dotenv import load_dotenv
+
+# Charger les variables d'environnement
+load_dotenv()
 
 class EmergencyAgent:
-    """Agent IA orchestrant les flux en respectant la sécurité et les priorités."""
-    
+    """
+    Agent IA utilisant Mistral pour orchestrer les flux urgences.
+
+    Cet agent fait de vrais appels LLM pour:
+    - Décider quelle action entreprendre
+    - Orienter les patients après consultation
+    - Justifier ses décisions
+
+    Les métriques (coût, latence, CO2) sont trackées automatiquement.
+    """
+
     def __init__(self, state: EmergencyState, controller):
         self.state = state
         self.controller = controller
-        # Mode simulation : rapide, sans ML, avec cache embeddings
         self.rag_engine = HospitalRAGEngine(mode="simulation")
-    
+
+        # Initialisation du client Mistral
+        self.mistral_client = None
+        api_key = os.environ.get("MISTRAL_API_KEY")
+        if api_key:
+            try:
+                from mistralai import Mistral
+                self.mistral_client = Mistral(api_key=api_key)
+            except ImportError:
+                pass
+
+        # Compteur pour limiter les appels LLM (1 appel toutes les N itérations)
+        self.iteration_count = 0
+        self.llm_frequency = 5  # Appel LLM toutes les 5 itérations
+
     def cycle_orchestration(self) -> list[str]:
         """Exécute le cycle complet des opérations urgences."""
         actions = []
-        
-        # 1. FINALISATION (Correction de l'AttributeError)
-        actions.extend(self._finaliser_transports())
-        
-        # 2. SURVEILLANCE (Priorité sécurité 15 min)
-        actions.extend(self._gerer_surveillance())
-    
-        # 3. SORTIE DE CONSULTATION (Décision RAG)
-        action_sortie = self._gerer_sortie_consultation()
-        if action_sortie:
-            actions.append(action_sortie)
-    
-        # 4. TRANSPORT VERS UNITÉS (Règle 45 min + Règle de Secours)
-        action_trans_unite = self._gerer_transport_unite()
-        if action_trans_unite:
-            actions.append(action_trans_unite)
+        self.iteration_count += 1
 
-        # 5. ENTRÉE EN CONSULTATION
-        action_entree = self._gerer_consultation()
-        if action_entree:
-            actions.append(action_entree)
-    
+        # 1. FINALISATION des transports (toujours exécuté, pas besoin de LLM)
+        actions.extend(self._finaliser_transports())
+
+        # 2. Appel LLM pour décider des actions (toutes les N itérations)
+        if self.mistral_client and self.iteration_count % self.llm_frequency == 0:
+            llm_actions = self._decide_with_llm()
+            actions.extend(llm_actions)
+        else:
+            # Mode règles simples entre les appels LLM
+            actions.extend(self._gerer_surveillance())
+
+            action_sortie = self._gerer_sortie_consultation_simple()
+            if action_sortie:
+                actions.append(action_sortie)
+
+            action_trans = self._gerer_transport_unite_simple()
+            if action_trans:
+                actions.append(action_trans)
+
+            action_consult = self._gerer_consultation_simple()
+            if action_consult:
+                actions.append(action_consult)
+
         return [a for a in actions if a is not None]
+
+    def _decide_with_llm(self) -> list[str]:
+        """Utilise Mistral pour décider des actions à entreprendre."""
+        actions = []
+
+        # Construire le contexte
+        etat = self.state.to_dict()
+        patients = etat.get("patients", {})
+        patients_actifs = [p for p in patients.values() if p.get("statut") != "sorti"]
+
+        # Résumé de l'état
+        nb_attente = len([p for p in patients_actifs if p.get("statut") == "salle_attente"])
+        nb_rouge = len([p for p in patients_actifs if p.get("gravite") == "ROUGE"])
+        nb_jaune = len([p for p in patients_actifs if p.get("gravite") == "JAUNE"])
+        consultation_libre = etat.get("consultation", {}).get("patient_id") is None
+        patient_en_consultation = etat.get("consultation", {}).get("patient_id")
+
+        staff_data = etat.get("staff", [])
+        staff_dispo = len([s for s in staff_data if s.get("disponible") and not s.get("en_transport")])
+
+        queue_consultation = etat.get("queue_consultation", [])
+        queue_transport = etat.get("queue_transport", [])
+
+        prompt = f"""Tu es un agent IA gérant un service d'urgences hospitalières.
+
+ÉTAT ACTUEL:
+- Patients en attente: {nb_attente} (Rouge: {nb_rouge}, Jaune: {nb_jaune})
+- Consultation: {"LIBRE" if consultation_libre else f"OCCUPÉE par {patient_en_consultation}"}
+- Personnel disponible: {staff_dispo}
+- File consultation: {len(queue_consultation)} patients
+- File transport: {len(queue_transport)} patients
+
+RÈGLES:
+1. Priorité ROUGE > JAUNE > VERT
+2. Surveillance obligatoire toutes les 15 min
+3. Garder au moins 2 soignants pour la surveillance
+4. Orienter les patients VERT/GRIS vers MAISON après consultation
+5. Orienter les ROUGE/JAUNE vers l'unité appropriée (CARDIO, CHIRURGIE, etc.)
+
+Quelle action prioritaire dois-tu faire? Réponds en JSON:
+{{"action": "TRANSPORT_CONSULTATION|TRANSPORT_UNITE|SURVEILLANCE|TERMINER_CONSULTATION|ATTENDRE", "patient_id": "Pxxxx ou null", "destination": "MAISON|CARDIO|CHIRURGIE|null", "justification": "raison courte"}}"""
+
+        try:
+            start_time = time.perf_counter()
+
+            response = self.mistral_client.chat.complete(
+                model="ministral-3b-2512",
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=200,
+                temperature=0.3
+            )
+
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # Enregistrer les métriques
+            if hasattr(response, 'usage') and response.usage:
+                monitor.log_metrics_simple(
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    latency_ms=latency_ms,
+                    model_name="ministral-3b-2512",
+                    source="agent"
+                )
+
+            # Parser la réponse
+            response_text = response.choices[0].message.content.strip()
+
+            # Nettoyer le JSON
+            if "```json" in response_text:
+                response_text = response_text.split("```json")[1].split("```")[0].strip()
+            elif "```" in response_text:
+                response_text = response_text.split("```")[1].split("```")[0].strip()
+
+            decision = json_module.loads(response_text)
+            action_type = decision.get("action", "ATTENDRE")
+            patient_id = decision.get("patient_id")
+            destination = decision.get("destination")
+            justification = decision.get("justification", "")
+
+            # Exécuter l'action décidée
+            if action_type == "TRANSPORT_CONSULTATION" and patient_id:
+                staff_dispo_list = [s for s in self.state.staff
+                                   if s.disponible and not s.en_transport
+                                   and s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
+                if staff_dispo_list and self.state.consultation.est_libre():
+                    res = self.controller.demarrer_transport_consultation(patient_id, staff_dispo_list[0].id)
+                    if res.get("success"):
+                        actions.append(f"🤖 LLM: {patient_id} → consultation ({justification})")
+
+            elif action_type == "TERMINER_CONSULTATION" and patient_id:
+                dest_map = {"MAISON": UniteCible.MAISON, "CARDIO": UniteCible.CARDIO,
+                           "CHIRURGIE": UniteCible.CHIRURGIE, "REA": UniteCible.REA}
+                dest = dest_map.get(destination, UniteCible.MAISON)
+                res = self.controller.terminer_consultation(patient_id, dest)
+                if res.get("success"):
+                    actions.append(f"🤖 LLM: Consultation terminée → {destination} ({justification})")
+
+            elif action_type == "TRANSPORT_UNITE" and patient_id:
+                staff_dispo_list = [s for s in self.state.staff
+                                   if s.disponible and not s.en_transport
+                                   and s.type == TypeStaff.AIDE_SOIGNANT]
+                if staff_dispo_list:
+                    res = self.controller.demarrer_transport_unite(patient_id, staff_dispo_list[0].id)
+                    if res.get("success"):
+                        actions.append(f"🤖 LLM: {patient_id} → unité ({justification})")
+
+            elif action_type == "SURVEILLANCE":
+                actions.extend(self._gerer_surveillance())
+                if actions:
+                    actions[-1] = f"🤖 LLM: Surveillance ({justification})"
+
+            else:
+                actions.append(f"🤖 LLM: Attente ({justification})")
+
+        except Exception as e:
+            actions.append(f"⚠️ Erreur LLM: {str(e)[:50]}")
+
+        return actions
 
     def _finaliser_transports(self) -> list[str]:
         """Vérifie si les transports sont arrivés et libère le personnel."""
@@ -140,55 +291,6 @@ class EmergencyAgent:
                         actions.append(f"🏁 {p.prenom if p else pid} arrivé en unité")
         return actions
 
-    def _gerer_transport_unite(self) -> Optional[str]:
-        """Gère le transport vers les unités avec gestion du quorum de sécurité."""
-        queue = self.state.get_queue_transport_sortie()
-        if not queue: return None
-    
-        p = queue[0]
-    
-        # 1. Identifier le personnel mobile libre (Infirmières B/C + AS 1/2)
-        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
-        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
-    
-        # Aide-soignants pour transport long (45 min)
-        as_dispo = [s for s in staff_dispo if s.type == TypeStaff.AIDE_SOIGNANT]
-
-        # CAS NORMAL : Transport direct par AS (45 min)
-        # Sécurité : On ne lance un 45 min que s'il reste au moins 2 personnes pour la surveillance
-        if as_dispo and len(staff_dispo) >= 3:
-            res = self.controller.demarrer_transport_unite(p.id, as_dispo[0].id)
-            if res.get("success"):
-                return f"🚑 {p.prenom} -> {p.unite_cible} (AS, 45 min)"
-
-        # CAS DE SECOURS : Retour en salle d'attente (5 min)
-        # Si AS occupés ou risque pour la surveillance, on libère la consultation
-        if staff_dispo:
-            agent = staff_dispo[0]
-            # On utilise l'outil de secours (5 min de trajet)
-            res = self.controller.retourner_patient_salle_attente(self.state, p.id, agent.id)
-            if res.get("success"):
-                return f"🔄 {p.prenom} replacé en salle (Secours, 5 min) : AS occupés"
-            
-        return None
-    
-    def _gerer_consultation(self) -> Optional[str]:
-        """Gère l'entrée en consultation si au moins 1 soignant reste en surveillance."""
-        if not self.state.consultation.est_libre(): return None
-        
-        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
-        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
-
-        if len(staff_dispo) < 2:
-            return "⏳ Sécurité : Personnel retenu pour surveillance"
-
-        queue = self.state.get_queue_consultation()
-        if queue and staff_dispo:
-            res = self.controller.demarrer_transport_consultation(queue[0].id, staff_dispo[0].id)
-            if res.get("success"):
-                return f"🚑 {queue[0].id} ({queue[0].prenom}) vers consultation"
-        return None
-
     def _gerer_surveillance(self) -> list[str]:
         """Assure la ronde de surveillance toutes les 15 min."""
         actions = []
@@ -205,30 +307,62 @@ class EmergencyAgent:
                         actions.append(f"📋 {agent.id} affecté à {salle.id}")
         return actions
 
-    def _gerer_sortie_consultation(self) -> Optional[str]:
-        """Détermine si la consultation est finie et décide de la suite."""
-        if self.state.consultation.est_libre(): 
+    def _gerer_sortie_consultation_simple(self) -> Optional[str]:
+        """Version simple de la gestion de sortie (entre les appels LLM)."""
+        if self.state.consultation.est_libre():
             return None
-        
+
         pid = self.state.consultation.patient_id
         patient = self.state.patients.get(pid)
-    
-        # Calcul de la durée écoulée
+        if not patient:
+            return None
+
         debut = self.state.consultation.debut_consultation
-        if not debut: return None
+        if not debut:
+            return None
         duree_ecoulee = (self.state.current_time - debut).total_seconds() / 60
-    
-        # Durée minimale selon les règles (ex: VERT 10-25min)
         duree_min = 10 if patient.gravite == Gravite.VERT else 20
-    
+
         if duree_ecoulee >= duree_min:
-            # Logique de décision simplifiée
-            # Si VERT ou GRIS -> Maison, sinon -> Une unité au hasard
             destination = UniteCible.MAISON if patient.gravite in [Gravite.VERT, Gravite.GRIS] else UniteCible.CARDIO
-        
             res = self.controller.terminer_consultation(pid, destination)
             if res.get("success"):
-                return f"✅ Consultation terminée : {patient.prenom} orienté vers {destination}"
+                return f"✅ {patient.prenom} → {destination}"
+        return None
+
+    def _gerer_transport_unite_simple(self) -> Optional[str]:
+        """Version simple du transport unité."""
+        queue = self.state.get_queue_transport_sortie()
+        if not queue:
+            return None
+
+        p = queue[0]
+        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
+        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
+        as_dispo = [s for s in staff_dispo if s.type == TypeStaff.AIDE_SOIGNANT]
+
+        if as_dispo and len(staff_dispo) >= 3:
+            res = self.controller.demarrer_transport_unite(p.id, as_dispo[0].id)
+            if res.get("success"):
+                return f"🚑 {p.prenom} → {p.unite_cible}"
+        return None
+
+    def _gerer_consultation_simple(self) -> Optional[str]:
+        """Version simple de la gestion consultation."""
+        if not self.state.consultation.est_libre():
+            return None
+
+        staff_mobiles = [s for s in self.state.staff if s.type.value in ["infirmier(ere)_mobile", "aide_soignant"]]
+        staff_dispo = [s for s in staff_mobiles if s.disponible and not s.en_transport]
+
+        if len(staff_dispo) < 2:
+            return None
+
+        queue = self.state.get_queue_consultation()
+        if queue and staff_dispo:
+            res = self.controller.demarrer_transport_consultation(queue[0].id, staff_dispo[0].id)
+            if res.get("success"):
+                return f"🚑 {queue[0].prenom} → consultation"
         return None
 # ========== FONCTIONS UTILITAIRES ==========
 
@@ -385,7 +519,7 @@ with st.sidebar:
 st.title("🏥 Emergency Management")
 
 # Structure en onglets
-tab_simulation, tab_chatbot = st.tabs(["📊 Simulation", "💬 Chatbot"])
+tab_simulation, tab_chatbot, tab_monitoring = st.tabs(["📊 Simulation", "💬 Chatbot", "📈 Monitoring"])
 
 # ========== ONGLET SIMULATION ==========
 with tab_simulation:
@@ -555,6 +689,30 @@ with tab_simulation:
         else:
             st.info("Aucun événement")
 
+    with st.sidebar:
+        st.divider()
+        st.subheader("📊 Métriques IA (Cumulées)")
+
+        # Métriques globales
+        col1, col2 = st.columns(2)
+        col1.metric("💵 Coût ($)", f"{monitor.total_dollar_cost:.4f}")
+        col2.metric("⚡ Énergie (kWh)", f"{monitor.total_energy_kwh:.6f}")
+
+        col3, col4 = st.columns(2)
+        col3.metric("🌍 CO2 (kg)", f"{monitor.total_co2_kg:.6f}")
+        avg_latency = monitor.get_average_latency()
+        col4.metric("⏱️ Latence (ms)", f"{avg_latency:.0f}")
+
+        # Compteur de requêtes
+        st.caption(f"📈 Total requêtes: {monitor.request_count}")
+
+        # Bouton reset des métriques
+        if st.button("🔄 Reset métriques", use_container_width=True):
+            monitor.reset()
+            st.success("Métriques réinitialisées")
+            time.sleep(0.3)
+            st.rerun()
+
 # ========== ONGLET CHATBOT ==========
 with tab_chatbot:
     st.subheader("💬 Assistant Urgences")
@@ -675,6 +833,143 @@ with tab_chatbot:
             if chatbot:
                 chatbot.clear_conversation()
             st.rerun()
+
+# ========== ONGLET MONITORING ==========
+with tab_monitoring:
+    st.subheader("📈 Monitoring des Métriques IA")
+    st.caption("Suivi en temps réel du coût, de la latence et de l'impact écologique")
+
+    # Métriques globales en cartes
+    st.markdown("### 📋 Métriques Globales")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric(
+            label="💵 Coût Total",
+            value=f"${monitor.total_dollar_cost:.4f}",
+            help="Coût simulé basé sur les tarifs Mistral AI"
+        )
+    with col2:
+        st.metric(
+            label="⚡ Énergie Consommée",
+            value=f"{monitor.total_energy_kwh:.6f} kWh",
+            help="Consommation énergétique estimée pour l'inférence GPU"
+        )
+    with col3:
+        st.metric(
+            label="🌍 Empreinte CO2",
+            value=f"{monitor.total_co2_kg:.6f} kg",
+            help="Potentiel de réchauffement global (kgCO2eq) - Mix France"
+        )
+    with col4:
+        avg_latency = monitor.get_average_latency()
+        st.metric(
+            label="⏱️ Latence Moyenne",
+            value=f"{avg_latency:.0f} ms",
+            help="Temps de réponse moyen des requêtes LLM"
+        )
+
+    st.divider()
+
+    # Breakdown par composant
+    st.markdown("### 📊 Détail par Composant")
+
+    col_agent, col_chatbot, col_rag = st.columns(3)
+
+    with col_agent:
+        st.markdown("#### 🤖 Agent")
+        agent_stats = monitor.by_source.get("agent", {})
+        agent_count = agent_stats.get("count", 0)
+        st.metric("Requêtes", agent_count)
+        if agent_count > 0:
+            st.caption(f"💵 ${agent_stats.get('cost', 0):.4f}")
+            st.caption(f"⚡ {agent_stats.get('energy', 0):.6f} kWh")
+            st.caption(f"🌍 {agent_stats.get('co2', 0):.6f} kg CO2")
+            avg_lat = agent_stats.get('latency', 0) / max(1, agent_count)
+            st.caption(f"⏱️ {avg_lat:.0f} ms (moy)")
+        else:
+            st.caption("Aucune requête")
+
+    with col_chatbot:
+        st.markdown("#### 💬 Chatbot")
+        chat_stats = monitor.by_source.get("chatbot", {})
+        chat_count = chat_stats.get("count", 0)
+        st.metric("Requêtes", chat_count)
+        if chat_count > 0:
+            st.caption(f"💵 ${chat_stats.get('cost', 0):.4f}")
+            st.caption(f"⚡ {chat_stats.get('energy', 0):.6f} kWh")
+            st.caption(f"🌍 {chat_stats.get('co2', 0):.6f} kg CO2")
+            avg_lat = chat_stats.get('latency', 0) / max(1, chat_count)
+            st.caption(f"⏱️ {avg_lat:.0f} ms (moy)")
+        else:
+            st.caption("Aucune requête")
+
+    st.divider()
+
+    # Historique des requêtes
+    st.markdown("### 📜 Historique des Requêtes")
+
+    recent = monitor.get_recent_history(10)
+    if recent:
+        for req in reversed(recent):
+            source_emoji = {"agent": "🤖", "chatbot": "💬"}.get(req.source, "❓")
+            time_str = req.timestamp.strftime("%H:%M:%S")
+            st.markdown(
+                f"**{source_emoji} {req.source.upper()}** | "
+                f"`{time_str}` | "
+                f"💵 ${req.dollar_cost:.5f} | "
+                f"⏱️ {req.latency_ms:.0f}ms | "
+                f"📝 {req.input_tokens}→{req.output_tokens} tokens"
+            )
+    else:
+        st.info("Aucune requête enregistrée. Utilisez le chatbot ou activez l'agent pour générer des métriques.")
+
+    st.divider()
+
+    # Informations sur les tarifs
+    with st.expander("💰 Tarification des modèles ($/1M tokens)"):
+        st.markdown("""
+        | Modèle | Input | Output |
+        |--------|-------|--------|
+        | ministral-3b-2512 | $0.10 | $0.10 |
+        | ministral-8b-latest | $0.10 | $0.10 | 
+        | mistral-small-latest | $0.20 | $0.60 |
+        | mistral-large-latest | $0.50 | $1.50 |
+
+        *Source: [Mistral AI](https://mistral.ai/fr/technology/)*
+        """)
+
+    with st.expander("🌱 Méthodologie Impact Écologique"):
+        st.markdown("""
+        **Énergie (kWh):**
+        - Estimation basée sur la consommation GPU pour l'inférence
+        - Approximation: ~0.0002 kWh par 1000 tokens
+
+        **CO2 (kgCO2eq):**
+        - Basé sur le mix électrique français (RTE)
+        - Facteur: ~0.052 kgCO2eq/kWh
+
+        *Méthodologie: [EcoLogits](https://ecologits.ai/latest/methodology/llm_inference/)*
+        """)
+
+    # Actions
+    col_action1, col_action2 = st.columns(2)
+    with col_action1:
+        if st.button("🔄 Réinitialiser toutes les métriques", use_container_width=True):
+            monitor.reset()
+            st.success("✅ Métriques réinitialisées")
+            time.sleep(0.5)
+            st.rerun()
+
+    with col_action2:
+        summary = monitor.get_summary()
+        st.download_button(
+            label="📥 Exporter le résumé (JSON)",
+            data=str(summary),
+            file_name="monitoring_summary.json",
+            mime="application/json",
+            use_container_width=True
+        )
 
 # ========== CYCLE AGENT ==========
 

@@ -7,10 +7,13 @@ Utilise regex pour les patterns courants + Mistral pour les cas complexes.
 
 import re
 import json
+import time
 import logging
 from enum import Enum
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Pattern
+
+from monitoring.monitoring import monitor
 
 logger = logging.getLogger("IntentParser")
 
@@ -228,7 +231,7 @@ class IntentParser:
         return entities
 
     def _parse_with_mistral(self, text: str) -> ParsedIntent:
-        """Utilise Mistral pour parser les intentions complexes."""
+        """Utilise Mistral pour parser les intentions complexes avec monitoring."""
 
         prompt = f"""Tu es un parseur d'intentions pour un systeme de gestion des urgences hospitalieres.
 
@@ -246,10 +249,24 @@ Commande a analyser: "{text}"
 Reponds UNIQUEMENT avec le JSON, sans explication."""
 
         try:
+            start_time = time.perf_counter()
+
             response = self.mistral_client.chat.complete(
                 model="ministral-3b-2512",
                 messages=[{"role": "user", "content": prompt}],
             )
+
+            latency_ms = (time.perf_counter() - start_time) * 1000
+
+            # Enregistrer les métriques du parsing (chatbot)
+            if hasattr(response, 'usage') and response.usage:
+                monitor.log_metrics_simple(
+                    input_tokens=response.usage.prompt_tokens,
+                    output_tokens=response.usage.completion_tokens,
+                    latency_ms=latency_ms,
+                    model_name="ministral-3b-2512",
+                    source="chatbot"
+                )
 
             response_text = response.choices[0].message.content.strip()
 
