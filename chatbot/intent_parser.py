@@ -247,7 +247,7 @@ Reponds UNIQUEMENT avec le JSON, sans explication."""
 
         try:
             response = self.mistral_client.chat.complete(
-                model="mistral-large-latest",
+                model="ministral-3b-2512",
                 messages=[{"role": "user", "content": prompt}],
             )
 

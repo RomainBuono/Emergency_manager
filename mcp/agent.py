@@ -325,7 +325,7 @@ Réponds UNIQUEMENT avec un JSON. Le champ "raisonnement" doit être sur UNE SEU
         try:
             # Appel à l'API Mistral avec le contexte augmenté
             response = self.client.chat.complete(
-                model="mistral-large-latest",
+                model="mistral-small-latest",
                 messages=[{"role": "user", "content": prompt}],
             )
 

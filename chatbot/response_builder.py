@@ -115,7 +115,7 @@ Réponds toujours en français."""
                 full_prompt = f"{prompt}\n\nContexte/Données:\n{context}"
 
             response = self.mistral_client.chat.complete(
-                model="mistral-large-latest",
+                model="ministral-8b-latest",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": full_prompt}
