@@ -7,15 +7,16 @@ from sentence_transformers import SentenceTransformer
 
 def build_medical_index() -> None:
     """
-    Transforme les protocoles JSON en index vectoriel FAISS.
-    Prépare le système pour une recherche sémantique scalable.
+    Transforme les protocoles JSON en index vectoriel FAISS avec Boosting de Précision.
+    Utilise une structure de document enrichie pour améliorer la discrimination sémantique.
     """
     # 1. Configuration des constantes
     MODEL_NAME: Final[str] = 'paraphrase-multilingual-MiniLM-L12-v2'
-    BASE_PATH: Final[Path] = Path(__file__).parent.parent.parent / "data_regle"
+    # Utilisation de chemins robustes
+    BASE_PATH: Final[Path] = Path(__file__).resolve().parent.parent.parent / "data_regle"
     JSON_FILE: Final[Path] = BASE_PATH / "protocoles.json"
     INDEX_FILE: Final[Path] = BASE_PATH / "protocoles.index"
-    # 2. Vérification de l'existence du dossier 
+
     if not BASE_PATH.exists():
         BASE_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -25,44 +26,60 @@ def build_medical_index() -> None:
 
     # 3. Chargement des données
     with open(JSON_FILE, "r", encoding="utf-8") as f:
-        protocols: List[Dict[str, str]] = json.load(f)
+        protocols: List[Dict] = json.load(f)
 
     if not protocols:
         print("Le fichier JSON est vide.")
         return
 
-    # 4. Préparation des textes (Concaténation titre + contenu pour plus de contexte)
-    # On utilise une compréhension de liste
-    documents: List[str] = [
-        f"{p.get('titre', '')} {p.get('description', '')} {p.get('actions', '')}" 
-        for p in protocols
-    ]
+    # 4. Préparation des textes avec Boosting de Précision
+    # On structure le document pour que l'Embedding se focalise sur les bons clusters
+    documents: List[str] = []
+    for p in protocols:
+        patho = p.get('pathologie', 'Inconnu')
+        symptomes_list = p.get('symptomes', [])
+        sympts_str = ", ".join(symptomes_list)
+        
+        # TECHNIQUE DE BOOSTING AVANCÉE :
+        # - Répétition du titre (Boosting de classe)
+        # - Séparateurs sémantiques (|) pour l'attention du Transformer
+        # - Inclusion explicite des symptômes pour la granularité
+        doc_text = (
+            f"[PATHOLOGIE] {patho} | "
+            f"[PATHOLOGIE] {patho} | "
+            f"[SYMPTOMES] {sympts_str}"
+        )
+        documents.append(doc_text)
 
-    # 5. Génération des Embeddings via SentenceTransformer
-    print(f"Encodage de {len(documents)} protocoles...")
+    # 5. Génération des Embeddings
+    print(f"Encodage de {len(documents)} protocoles avec {MODEL_NAME}...")
+    # On charge le modèle une seule fois ici
     encoder = SentenceTransformer(MODEL_NAME)
-    # conversion en float32, format requis par FAISS
-    embeddings = encoder.encode(documents).astype('float32')
+    
+    # Encodage massif (convert_to_numpy=True assure la compatibilité FAISS)
+    embeddings = encoder.encode(
+        documents, 
+        batch_size=32, 
+        show_progress_bar=True, 
+        convert_to_numpy=True
+    ).astype('float32')
 
     # 6. Création de l'index FAISS
-    # On utilise l'index de Produit Scalaire (Inner Product) pour la similarité cosinus
+    # IndexFlatIP + normalize_L2 = Similarité Cosinus (Best practice pour NLP)
     dimension: int = embeddings.shape[1]
     index = faiss.IndexFlatIP(dimension)
 
-    # Normalisation L2 : indispensable pour que le produit scalaire 
-    # se comporte comme une similarité cosinus (entre 0 et 1)
+    # Normalisation L2 critique pour transformer le produit scalaire en Cosine Similarity
     faiss.normalize_L2(embeddings)
     index.add(embeddings)
 
     # 7. Sauvegarde sur disque
     faiss.write_index(index, str(INDEX_FILE))
     
-    print("-" * 30)
-    print(f"✅ Index FAISS créé avec succès !")
-    print(f"📍 Emplacement : {INDEX_FILE}")
-    print(f"📊 Nombre de vecteurs : {index.ntotal}")
-    print(f"📐 Dimension : {dimension}")
-    print("-" * 30)
+    print(f"Index FAISS boosté créé avec succès !")
+    print(f"rotocoles indexés : {index.ntotal}")
+    print(f"Dimension vectorielle : {dimension}")
+    print(f"Fichier : {INDEX_FILE}")
 
 if __name__ == "__main__":
     build_medical_index()

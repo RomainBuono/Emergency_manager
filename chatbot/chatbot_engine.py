@@ -121,24 +121,23 @@ class ChatbotEngine:
     def process_message(self, user_message: str) -> ChatbotResponse:
         """
         Point d'entree principal pour traiter les messages.
+        Version corrigée : Isolation du contexte RAG pour éviter la pollution sémantique.
 
         Pipeline:
-        1. Valider l'input via les guardrails RAG
-        2. Parser l'intention
-        3. Executer les actions si necessaire
-        4. Interroger RAG pour le contexte medical
-        5. Construire la reponse complete
-
-        Args:
-            user_message: Message de l'utilisateur
-
-        Returns:
-            ChatbotResponse complete
+        1. Reset local & Validation guardrails
+        2. Parsing d'intention
+        3. Court-circuit du contexte si intention non médicale
+        4. Execution des actions
+        5. Construction de la réponse isolée
         """
         start_time = datetime.now()
 
-        # Nettoyer l'input
+        # --- FIX BUG 1 : RESET EXPLICITE DES VARIABLES LOCALES ---
+        # On s'assure qu'aucune donnée ne survit d'un appel précédent
+        rag_response = None
+        action_results = []
         user_message = user_message.strip()
+
         if not user_message:
             return ChatbotResponse(
                 message="Veuillez entrer un message.",
@@ -146,9 +145,11 @@ class ChatbotEngine:
                 latency_ms=0.0
             )
 
-        # Etape 1: Validation via guardrails RAG
+        # Etape 1: Validation via guardrails RAG (récupération initiale)
+        # Note: Le RAG est interrogé ici pour la sécurité (détection d'injection)
         rag_response = self._validate_and_query_rag(user_message)
 
+        # Gestion immédiate des blocages de sécurité
         if rag_response and not rag_response.is_safe:
             latency = (datetime.now() - start_time).total_seconds() * 1000
             return ChatbotResponse(
@@ -162,8 +163,22 @@ class ChatbotEngine:
         intent = self.intent_parser.parse(user_message)
         logger.info(f"Intent detecte: {intent.intent_type.value} (conf: {intent.confidence:.2f})")
 
+        # --- FIX BUG 1.2 : FILTRAGE DU CONTEXTE (ISOLATION) ---
+        # Si l'intention est purement administrative ou inconnue, on vide rag_response 
+        # pour éviter que le LLM n'hallucine un lien avec un protocole précédent.
+        if intent.intent_type in [
+            IntentType.LIST_PATIENTS, 
+            IntentType.GET_STATUS, 
+            IntentType.EXPLAIN_DECISION,
+            IntentType.UNKNOWN
+        ]:
+            # On garde l'objet pour le statut de sécurité mais on invalide le protocole
+            if rag_response:
+                rag_response.protocol = None
+                rag_response.applicable_rules = []
+            logger.info("Contexte RAG neutralisé pour intention non médicale.")
+
         # Etape 3: Executer les actions si necessaire
-        action_results = []
         if intent.intent_type not in [IntentType.ASK_PROTOCOL, IntentType.UNKNOWN]:
             action_plan = self.intent_parser.build_action_plan(intent)
             if action_plan.actions:
@@ -171,6 +186,7 @@ class ChatbotEngine:
                 logger.info(f"Actions executees: {len(action_results)}")
 
         # Etape 4: Construire la reponse
+        # On passe la rag_response potentiellement nettoyée à l'étape précédente
         response_data = self.response_builder.build(
             intent=intent,
             rag_response=rag_response,

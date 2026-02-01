@@ -5,7 +5,7 @@ Moteur de requêtes principal avec orchestration de trois niveaux de sécurité.
 Intègre la recherche basée sur FAISS avec une vérification de sécurité multicouche.
 
 VERSION OPTIMISÉE :
-- Ajout du MIN_CONFIDENCE_THRESHOLD (0.65) pour éviter le Semantic Drift.
+- Ajout du MIN_CONFIDENCE_THRESHOLD (0.7) pour éviter le Semantic Drift.
 - Modes simulation/chatbot et pré-calcul d'embeddings.
 """
 
@@ -30,8 +30,8 @@ class HospitalRAGEngine:
     """
 
     # Seuil de confiance minimal pour valider une récupération sémantique
-    # En dessous de 0.65, on considère que le RAG "hallucine" une proximité.
-    MIN_CONFIDENCE_THRESHOLD: Final[float] = 0.65
+    # En dessous de 0.7, on considère que le RAG "hallucine" une proximité.
+    MIN_CONFIDENCE_THRESHOLD: Final[float] = 0.7
 
     # Symptômes communs pour pré-calcul
     COMMON_SYMPTOMS = [
