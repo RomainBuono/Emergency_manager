@@ -26,6 +26,14 @@ from mcp.state import EmergencyState, Patient, Gravite, UniteCible, StatutPatien
 from mcp.controllers.emergency_controller import EmergencyController
 from rag.engine import HospitalRAGEngine
 
+# Import Chatbot
+try:
+    from chatbot.chatbot_engine import ChatbotEngine
+    CHATBOT_AVAILABLE = True
+except ImportError as e:
+    CHATBOT_AVAILABLE = False
+    print(f"Chatbot non disponible: {e}")
+
 st.set_page_config(page_title="🏥 Emergency Dashboard + Agent", layout="wide")
 
 # ========== SESSION STATE ==========
@@ -47,6 +55,26 @@ if 'state' not in st.session_state:
 # Charger l'agent une seule fois au démarrage
 if 'agent_loaded' not in st.session_state:
     st.session_state.agent_loaded = False
+
+# Initialiser l'historique des decisions de l'agent
+if 'decision_history' not in st.session_state:
+    st.session_state.decision_history = []
+
+# Initialiser le chatbot
+if 'chatbot' not in st.session_state and CHATBOT_AVAILABLE:
+    try:
+        st.session_state.chatbot = ChatbotEngine(
+            controller=st.session_state.controller,
+            state=st.session_state.state,
+            decision_history_ref=st.session_state.decision_history
+        )
+        st.session_state.chat_history = []
+    except Exception as e:
+        st.session_state.chatbot = None
+        print(f"Erreur initialisation chatbot: {e}")
+
+if 'chat_history' not in st.session_state:
+    st.session_state.chat_history = []
 
 def add_event(msg, emoji="ℹ️"):
     st.session_state.events.append({
@@ -356,180 +384,298 @@ with st.sidebar:
 
 st.title("🏥 Emergency Management")
 
-etat = get_state()
+# Structure en onglets
+tab_simulation, tab_chatbot = st.tabs(["📊 Simulation", "💬 Chatbot"])
 
-# Alertes
-alertes = etat.get("alertes_surveillance", [])
-if alertes:
-    for alerte in alertes:
-        st.error(alerte)
+# ========== ONGLET SIMULATION ==========
+with tab_simulation:
+    etat = get_state()
 
-# ========== BANDEAU PERSONNEL ==========
-st.subheader("👨‍⚕️ Suivi du Personnel")
+    # Alertes
+    alertes = etat.get("alertes_surveillance", [])
+    if alertes:
+        for alerte in alertes:
+            st.error(alerte)
 
-staff_data = etat.get("staff", [])
+    # ========== BANDEAU PERSONNEL ==========
+    st.subheader("👨‍⚕️ Suivi du Personnel")
 
-medecins = [s for s in staff_data if s.get("type") == "médecin"]
-inf_fixes = [s for s in staff_data if s.get("type") == "infirmier(ere)_fixe"]
-inf_mobiles = [s for s in staff_data if s.get("type") == "infirmier(ere)_mobile"]
-aides_soignants = [s for s in staff_data if s.get("type") == "aide_soignant"]
-# Metric 
-patients = etat.get("patients", {})
-nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
-nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
+    staff_data = etat.get("staff", [])
 
-# Définition de la variable manquante
-nb_consultation = 1 if etat.get("consultation", {}).get("patient_id") else 0
+    medecins = [s for s in staff_data if s.get("type") == "médecin"]
+    inf_fixes = [s for s in staff_data if s.get("type") == "infirmier(ere)_fixe"]
+    inf_mobiles = [s for s in staff_data if s.get("type") == "infirmier(ere)_mobile"]
+    aides_soignants = [s for s in staff_data if s.get("type") == "aide_soignant"]
+    # Metric
+    patients = etat.get("patients", {})
+    nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
+    nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
 
-nb_en_transport = len([p for p in patients.values() if "transport" in p.get("statut", "")])
-col_med, col_if, col_im, col_as = st.columns(4)
+    # Définition de la variable manquante
+    nb_consultation = 1 if etat.get("consultation", {}).get("patient_id") else 0
 
-with col_med:
-    st.markdown("**👨‍⚕️ Médecins**")
-    # Utilisation de staff_data pour être cohérent avec le reste du bloc
-    medecin_data = next((s for s in staff_data if s.get("type") == "médecin"), None)
-    patient_en_consultation = etat.get("consultation", {}).get("patient_id")
-    if medecin_data:
-        if patient_en_consultation:
-            st.caption(
-                f"🔴 {medecin_data.get('id')} — en consultation avec "
-                f"`{patient_en_consultation}`")
-        else:
-            st.caption(f"🟢 {medecin_data.get('id')} — libre")
+    nb_en_transport = len([p for p in patients.values() if "transport" in p.get("statut", "")])
+    col_med, col_if, col_im, col_as = st.columns(4)
 
-with col_if:
-    st.markdown("**💉 Inf. Fixes**")
-    for staff in inf_fixes:
-        loc = staff.get("localisation", "Triage")
-        st.caption(f"📍 {staff.get('id')}: {loc}")
+    with col_med:
+        st.markdown("**👨‍⚕️ Médecins**")
+        medecin_data = next((s for s in staff_data if s.get("type") == "médecin"), None)
+        patient_en_consultation = etat.get("consultation", {}).get("patient_id")
+        if medecin_data:
+            if patient_en_consultation:
+                st.caption(
+                    f"🔴 {medecin_data.get('id')} — en consultation avec "
+                    f"`{patient_en_consultation}`")
+            else:
+                st.caption(f"🟢 {medecin_data.get('id')} — libre")
 
-with col_im:
-    st.markdown("**🏃 Inf. Mobiles**")
-    for staff in inf_mobiles:
-        # Priorité d'affichage : Transport > Surveillance > Attente
-        if staff.get("en_transport"):
-            status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
-        elif staff.get("salle_surveillee"):
-            status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
-        else:
-            status_text = "⏳ En attente de mission"
-        
-        dispo = "🟢" if staff.get("disponible") else "🔴"
-        st.caption(f"{dispo} {staff.get('id')}: {status_text}")
+    with col_if:
+        st.markdown("**💉 Inf. Fixes**")
+        for staff in inf_fixes:
+            loc = staff.get("localisation", "Triage")
+            st.caption(f"📍 {staff.get('id')}: {loc}")
 
-with col_as:
-    st.markdown("**🤝 Aides-Soignants**")
-    for staff in aides_soignants:
-        # Les aides-soignants ont maintenant les mêmes capacités d'affichage
-        if staff.get("en_transport"):
-            status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
-        elif staff.get("salle_surveillee"):
-            status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
-        else:
-            status_text = "⏳ En attente de mission"
-            
-        # On garde le timer de sécurité (60 min max hors service)
-        temps_restant = staff.get("temps_disponible_restant")
-        timer = f" ⏱️ {temps_restant}min" if temps_restant and temps_restant > 0 else ""
-        
-        dispo = "🟢" if staff.get("disponible") else "🔴"
-        st.caption(f"{dispo} {staff.get('id')}: {status_text}{timer}")
+    with col_im:
+        st.markdown("**🏃 Inf. Mobiles**")
+        for staff in inf_mobiles:
+            if staff.get("en_transport"):
+                status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
+            elif staff.get("salle_surveillee"):
+                status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
+            else:
+                status_text = "⏳ En attente de mission"
+            dispo = "🟢" if staff.get("disponible") else "🔴"
+            st.caption(f"{dispo} {staff.get('id')}: {status_text}")
 
-st.divider()
+    with col_as:
+        st.markdown("**🤝 Aides-Soignants**")
+        for staff in aides_soignants:
+            if staff.get("en_transport"):
+                status_text = f"🚑 Transport {staff.get('patient_transporte_id')}"
+            elif staff.get("salle_surveillee"):
+                status_text = f"📋 Surveillance {staff.get('salle_surveillee')}"
+            else:
+                status_text = "⏳ En attente de mission"
+            temps_restant = staff.get("temps_disponible_restant")
+            timer = f" ⏱️ {temps_restant}min" if temps_restant and temps_restant > 0 else ""
+            dispo = "🟢" if staff.get("disponible") else "🔴"
+            st.caption(f"{dispo} {staff.get('id')}: {status_text}{timer}")
 
-# Métriques
-col1, col2, col3, col4, col5 = st.columns(5)
-
-patients = etat.get("patients", {})
-nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
-nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
-nb_consultation = 1 if etat.get("consultation", {}).get("patient_id") else 0
-nb_en_transport = len([p for p in patients.values() if "transport" in p.get("statut", "")])
-
-col1.metric("👥 Total", nb_total)
-col2.metric("⏳ Attente", nb_attente)
-col3.metric("👨‍⚕️ Consultation", nb_consultation)
-col4.metric("🚑 Transport", nb_en_transport)
-
-salles = etat.get("salles_attente", [])
-cap = sum(s.get("capacite", 0) for s in salles)
-occ = sum(len(s.get("patients", [])) for s in salles)
-col5.metric("📊 Saturation", f"{int(occ/cap*100) if cap else 0}%")
-
-st.divider()
-
-# Layout principal
-col_left, col_right = st.columns([2, 1])
-
-with col_left:
-    # Salles
-    st.subheader("🏥 Salles d'Attente")
-    for salle in salles:
-        num = salle.get("id","").split("_")[-1]
-        pts = salle.get("patients", [])
-        cap_s = salle.get("capacite", 0)
-        
-        emojis = []
-        for pid in pts:
-            p = patients.get(pid, {})
-            g = p.get("gravite", "GRIS")
-            emojis.append({"ROUGE":"🔴","JAUNE":"🟡","VERT":"🟢","GRIS":"⚪"}.get(g,"❓"))
-        
-        emojis += ["◻️"] * (cap_s - len(pts))
-        
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            st.write(f"**Salle {num}** ({len(pts)}/{cap_s}): {' '.join(emojis)}")
-        with col2:
-            taux = int(len(pts)/cap_s*100) if cap_s > 0 else 0
-            st.progress(taux/100, text=f"{taux}%")
-    
     st.divider()
-    
-    # File attente
-    st.subheader("📋 File d'Attente Consultation")
-    queue = etat.get("queue_consultation", [])
-    if queue:
-        for i, pid in enumerate(queue[:5], 1):
-            p = patients.get(pid, {})
-            g = p.get("gravite", "GRIS")
-            emoji = {"ROUGE":"🔴","JAUNE":"🟡","VERT":"🟢","GRIS":"⚪"}.get(g,"❓")
-            
-            try:
-                arr = datetime.fromisoformat(p.get("arrived_at", ""))
-                now_sim = st.session_state.state.current_time
-                temps = int((now_sim - arr).total_seconds() / 60)
-            except:
-                temps = 0
-            
-            exc = " ⚠️ **>360min!**" if temps > 360 and g == "VERT" else ""
-            st.write(f"{i}. {emoji} **{p.get('prenom')} {p.get('nom')}** (`{pid}`) - {temps}min{exc}")
-        
-        if len(queue) > 5:
-            st.caption(f"... et {len(queue) - 5} autres")
-    else:
-        st.success("✅ Aucun patient en attente")
-    
-    # File transport
-    queue_transport = etat.get("queue_transport", [])
-    if queue_transport:
+
+    # Métriques
+    col1, col2, col3, col4, col5 = st.columns(5)
+
+    patients = etat.get("patients", {})
+    nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
+    nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
+    nb_consultation = 1 if etat.get("consultation", {}).get("patient_id") else 0
+    nb_en_transport = len([p for p in patients.values() if "transport" in p.get("statut", "")])
+
+    col1.metric("👥 Total", nb_total)
+    col2.metric("⏳ Attente", nb_attente)
+    col3.metric("👨‍⚕️ Consultation", nb_consultation)
+    col4.metric("🚑 Transport", nb_en_transport)
+
+    salles = etat.get("salles_attente", [])
+    cap = sum(s.get("capacite", 0) for s in salles)
+    occ = sum(len(s.get("patients", [])) for s in salles)
+    col5.metric("📊 Saturation", f"{int(occ/cap*100) if cap else 0}%")
+
+    st.divider()
+
+    # Layout principal
+    col_left, col_right = st.columns([2, 1])
+
+    with col_left:
+        # Salles
+        st.subheader("🏥 Salles d'Attente")
+        for salle in salles:
+            num = salle.get("id","").split("_")[-1]
+            pts = salle.get("patients", [])
+            cap_s = salle.get("capacite", 0)
+
+            emojis = []
+            for pid in pts:
+                p = patients.get(pid, {})
+                g = p.get("gravite", "GRIS")
+                emojis.append({"ROUGE":"🔴","JAUNE":"🟡","VERT":"🟢","GRIS":"⚪"}.get(g,"❓"))
+
+            emojis += ["◻️"] * (cap_s - len(pts))
+
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**Salle {num}** ({len(pts)}/{cap_s}): {' '.join(emojis)}")
+            with col2:
+                taux = int(len(pts)/cap_s*100) if cap_s > 0 else 0
+                st.progress(taux/100, text=f"{taux}%")
+
         st.divider()
-        st.subheader("🚑 File Attente Transport")
-        for i, pid in enumerate(queue_transport[:3], 1):
-            p = patients.get(pid, {})
-            unite = p.get("unite_cible", "N/A")
-            st.write(f"{i}. {p.get('prenom')} {p.get('nom')} → {unite}")
 
-with col_right:
-    st.subheader("📋 Log Événements")
-    if st.session_state.events:
-        with st.container(height=600):
-            for evt in reversed(st.session_state.events[-15:]):
-                st.text(f"[T+{evt['time']:03d}] {evt['emoji']} {evt['msg']}")
+        # File attente
+        st.subheader("📋 File d'Attente Consultation")
+        queue = etat.get("queue_consultation", [])
+        if queue:
+            for i, pid in enumerate(queue[:5], 1):
+                p = patients.get(pid, {})
+                g = p.get("gravite", "GRIS")
+                emoji = {"ROUGE":"🔴","JAUNE":"🟡","VERT":"🟢","GRIS":"⚪"}.get(g,"❓")
+
+                try:
+                    arr = datetime.fromisoformat(p.get("arrived_at", ""))
+                    now_sim = st.session_state.state.current_time
+                    temps = int((now_sim - arr).total_seconds() / 60)
+                except:
+                    temps = 0
+
+                exc = " ⚠️ **>360min!**" if temps > 360 and g == "VERT" else ""
+                st.write(f"{i}. {emoji} **{p.get('prenom')} {p.get('nom')}** (`{pid}`) - {temps}min{exc}")
+
+            if len(queue) > 5:
+                st.caption(f"... et {len(queue) - 5} autres")
+        else:
+            st.success("✅ Aucun patient en attente")
+
+        # File transport
+        queue_transport = etat.get("queue_transport", [])
+        if queue_transport:
+            st.divider()
+            st.subheader("🚑 File Attente Transport")
+            for i, pid in enumerate(queue_transport[:3], 1):
+                p = patients.get(pid, {})
+                unite = p.get("unite_cible", "N/A")
+                st.write(f"{i}. {p.get('prenom')} {p.get('nom')} → {unite}")
+
+    with col_right:
+        st.subheader("📋 Log Événements")
+        if st.session_state.events:
+            with st.container(height=600):
+                for evt in reversed(st.session_state.events[-15:]):
+                    st.text(f"[T+{evt['time']:03d}] {evt['emoji']} {evt['msg']}")
+        else:
+            st.info("Aucun événement")
+
+# ========== ONGLET CHATBOT ==========
+with tab_chatbot:
+    st.subheader("💬 Assistant Urgences")
+
+    if not CHATBOT_AVAILABLE:
+        st.error("Module chatbot non disponible. Verifiez l'installation.")
+    elif st.session_state.get('chatbot') is None:
+        st.warning("Chatbot non initialise. Cle API Mistral manquante?")
     else:
-        st.info("Aucun événement")
+        # Afficher le resume systeme
+        chatbot = st.session_state.chatbot
+        summary = chatbot.get_system_summary()
+        st.caption(f"Etat: {summary}")
 
-# ========== CYCLE AGENT ==========
+        st.divider()
+
+        # Afficher l'historique des messages
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
+                # Afficher les metadonnees pour les messages du bot
+                if msg["role"] == "assistant" and msg.get("metadata"):
+                    meta = msg["metadata"]
+
+                    # Status guardrail
+                    if meta.get("guardrail_status") == "blocked":
+                        st.error(f"Bloque: {meta.get('guardrail_details')}")
+
+                    # Contexte RAG
+                    if meta.get("rag_context"):
+                        with st.expander("📚 Contexte RAG"):
+                            ctx = meta["rag_context"]
+                            if ctx.get("protocol"):
+                                st.write(f"**Protocole:** {ctx['protocol'].get('pathologie')}")
+                                st.write(f"**Gravite:** {ctx['protocol'].get('gravite')}")
+                            if ctx.get("rules"):
+                                st.write(f"**Regles:** {', '.join(ctx['rules'][:3])}")
+                            st.write(f"*Score: {ctx.get('relevance_score', 0):.2f}*")
+
+                    # Actions executees
+                    if meta.get("actions_executed"):
+                        with st.expander("⚡ Actions executees"):
+                            for action in meta["actions_executed"]:
+                                status = "✅" if action.get("success") else "❌"
+                                st.write(f"{status} {action.get('tool')}")
+
+                    # Latence
+                    st.caption(f"Latence: {meta.get('latency_ms', 0):.0f}ms")
+
+        # Input utilisateur
+        if prompt := st.chat_input("Posez votre question ou donnez une commande..."):
+            # Ajouter message utilisateur
+            st.session_state.chat_history.append({
+                "role": "user",
+                "content": prompt
+            })
+
+            # Traiter avec le chatbot
+            with st.spinner("Traitement en cours..."):
+                response = chatbot.process_message(prompt)
+
+            # Ajouter reponse du bot
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": response.message,
+                "metadata": {
+                    "guardrail_status": response.guardrail_status,
+                    "guardrail_details": response.guardrail_details,
+                    "rag_context": response.rag_context,
+                    "actions_executed": response.actions_executed,
+                    "latency_ms": response.latency_ms
+                }
+            })
+
+            st.rerun()
+
+        # Boutons d'actions rapides
+        st.divider()
+        st.caption("Actions rapides:")
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            if st.button("📊 Etat systeme", use_container_width=True):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Quel est l'etat du systeme?"
+                })
+                st.rerun()
+
+        with col2:
+            if st.button("👥 Liste patients", use_container_width=True):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Liste les patients"
+                })
+                st.rerun()
+
+        with col3:
+            if st.button("➕ Ajouter patient", use_container_width=True):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Ajoute 1 patient jaune avec douleur abdominale"
+                })
+                st.rerun()
+
+        with col4:
+            if st.button("🤖 Derniere decision", use_container_width=True):
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": "Explique la derniere decision de l'agent"
+                })
+                st.rerun()
+
+        # Bouton effacer conversation
+        if st.button("🗑️ Effacer conversation"):
+            st.session_state.chat_history = []
+            if chatbot:
+                chatbot.clear_conversation()
+            st.rerun()
+
 # ========== CYCLE AGENT ==========
 
 if st.session_state.running and st.session_state.agent_enabled:
@@ -548,13 +694,30 @@ if st.session_state.running and st.session_state.agent_enabled:
     
     # ÉTAPE D : Lancer les décisions
     actions = st.session_state.agent.cycle_orchestration()
-    
+
+    # ÉTAPE E : Enregistrer dans l'historique des décisions (pour le chatbot)
+    if actions:
+        decision_record = {
+            "timestamp": datetime.now(),
+            "actions": actions,
+            "raisonnement": f"{len(actions)} action(s) executee(s)",
+            "temps_simulation": st.session_state.temps
+        }
+        st.session_state.decision_history.append(decision_record)
+        # Garder les 50 dernieres decisions
+        if len(st.session_state.decision_history) > 50:
+            st.session_state.decision_history = st.session_state.decision_history[-50:]
+
+        # Mettre a jour la reference dans le chatbot
+        if st.session_state.get('chatbot'):
+            st.session_state.chatbot.set_decision_history(st.session_state.decision_history)
+
     for action in actions:
         if action:
             # Choix de l'emoji selon l'action
             emoji = "🚑" if "transport" in action.lower() else "✅"
             if "📋" in action: emoji = "📋"
             add_event(action, emoji)
-    
+
     time.sleep(st.session_state.agent_speed)
     st.rerun()
