@@ -370,15 +370,45 @@ def get_state():
     return st.session_state.state.to_dict()
 
 def gen_patient():
-    noms = ["Martin", "Bernard", "Dubois", "Thomas", "Robert", "Petit"]
-    prenoms = ["Sophie", "Lucas", "Emma", "Thomas", "Léa", "Hugo"]
+    noms = [
+    "Martin", "Bernard", "Dubois", "Thomas", "Robert", "Petit", "Durand", "Leroy", 
+    "Moreau", "Simon", "Laurent", "Lefebvre", "Besson", "Dumas", "Renaud", "Roux",
+    "Müller", "Rossi", "García", "Smith", "Ivanov", "Novak", "Andersson", "Janssen", 
+    "O'Sullivan", "Sokolov", "Petrov", "Fernandez", "Santos", "Kowalski", "Moretti",
+    "Diallo", "Hassan", "Traoré", "Ben Saïd", "Kamau", "Abubakar", "Ibrahim", "Mbeki", 
+    "Sow", "Haddad", "Ali", "Diop", "Koffi", "Mensah",
+    "Nguyen", "Chen", "Kumar", "Yılmaz", "Kwon", "Sato", "Wang", "Singh", "Zou", 
+    "Yamamoto", "Li", "Park", "Tanaka", "Al-Farsi", "Choi"
+]
+    prenoms = [
+    "Sophie", "Emma", "Léa", "Chloé", "Julie", "Marie", "Inès", "Sarah", "Camille", "Léna",
+    "Aïcha", "Fatima", "Yasmine", "Leïla", "Zahra",
+    "Mei", "Ayumi", "Ji-woo", "Ananya", "Linh",
+    "Aminata", "Kenya", "Zuri", "Binta", "Mariam",
+    "Elena", "Svetlana", "García", "Priya", "Luciana",
+    "Lucas", "Thomas", "Hugo", "Nathan", "Mathis", "Antoine", "Liam", "Samuel", "Théo", "Louis",
+    "Amine", "Omar", "Malik", "Tariq", "Zayd",
+    "Kenji", "Hiroshi", "Ravi", "Jin", "Kwon",
+    "Moussa", "Kwame", "Saliou", "Koffi",
+    "Mateo", "Diego", "Stefan", "Vladimir", "Lars"
+]
     gravites = [Gravite.ROUGE, Gravite.JAUNE, Gravite.VERT]
     g = random.choices(gravites, weights=[0.2, 0.3, 0.5])[0]
     
     symptomes = {
-        Gravite.ROUGE: ["Douleur thoracique", "AVC suspecté", "Détresse respiratoire"],
-        Gravite.JAUNE: ["Fracture du bras", "Forte fièvre", "Plaie profonde"],
-        Gravite.VERT: ["Migraine", "Petite plaie", "Légère foulure"]
+        Gravite.ROUGE: ["Douleur thoracique intense" , "Difficulté respiratoire sévère" , "Perte de conscience" , "Paralysie soudaine (AVC)" , 
+                        "Difficulté soudaine à parler" , "Convulsions" , "Hémorragie abondante" , "Traumatisme crânien avec perte de conscience" , 
+                        "Ventre dur et douleur intense" , "Réaction allergique grave" , "Perte de vision soudaine" , "Vomissements de sang" , 
+                        "Brûlure du 3ème degré" , "Intoxication/Empoisonnement" ],
+        Gravite.JAUNE: ["Fracture suspectée" , "Luxation" , "Coupure profonde" , "Brûlure du 2ème degré" , "Fièvre élevée > 39°C" , 
+                        "Douleur abdominale intense" , "Vomissements avec déshydratation" , "Crise d'asthme modérée" , "Saignement persistant (15-20 min)" , 
+                        "Traumatisme crânien avec confusion" , "Infection urinaire avec fièvre" , "Entorse grave" , "Coliques néphrétiques" ],
+        Gravite.VERT: ["Entorse légère" , "Conjonctivite" , "Infection urinaire simple" , "Douleur dentaire supportable" , "Brûlure du 1er degré" , 
+                       "Mal de dos stable" , "Gastro-entérite" , "Otite" , "Éruption cutanée" , "Saignement de nez simple" , 
+                       "Corps étranger dans l'œil" , "Réaction allergique légère" , "Migraine habituelle" ],
+        Gravite.GRIS: ["Renouvellement d'ordonnance" , "Certificat médical de sport" , "Coupure superficielle" , "Rhume ou grippe sans fièvre" , 
+                       "Égratignure" , "Vaccination de routine" , "Mal de gorge léger" , "Retrait de verrue" , "Résultats d'analyses" , 
+                       "Toux légère" , "Problème de peau mineur" , "Arrêt de travail bénin" , "Piqûre d'insecte simple" , "Fatigue générale" ]
     }
     
     return {
@@ -477,7 +507,7 @@ with st.sidebar:
         p = gen_patient()
         r = add_patient(p)
         if r.get("success"):
-            emoji_map = {Gravite.ROUGE: "🔴", Gravite.JAUNE: "🟡", Gravite.VERT: "🟢"}
+            emoji_map = {Gravite.ROUGE: "🔴", Gravite.JAUNE: "🟡", Gravite.VERT: "🟢", Gravite.GRIS:"⚪"}
             add_event( f"{p['id']} ({p['prenom']} {p['nom']}) ajouté", emoji_map.get(p['gravite'], "👤"))
             st.success(f"✅ {p['prenom']} ajouté")
         time.sleep(0.3)
