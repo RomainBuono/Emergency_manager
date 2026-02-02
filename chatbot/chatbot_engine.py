@@ -62,6 +62,23 @@ class ChatbotEngine:
     - Affiche le status guardrail et contexte RAG
     """
 
+    # ✅ FIX : Liste des mots/phrases de salutation à whitelist
+    SALUTATIONS_WHITELIST = {
+        "salut",
+        "bonjour",
+        "hello",
+        "hi",
+        "hey",
+        "coucou",
+        "bonsoir",
+        "bonne journée",
+        "à bientôt",
+        "merci",
+        "au revoir",
+        "ça va",
+        "comment vas-tu",
+    }
+
     def __init__(
         self,
         controller,
@@ -108,9 +125,7 @@ class ChatbotEngine:
         # Composants
         self.intent_parser = IntentParser(self.mistral_client)
         self.action_executor = ActionExecutor(controller, state)
-        self.response_builder = ResponseBuilder(
-            self.mistral_client
-        )  # Passer Mistral pour réponses naturelles
+        self.response_builder = ResponseBuilder(self.mistral_client)
 
         # References partagees
         self.controller = controller
@@ -122,22 +137,43 @@ class ChatbotEngine:
 
         logger.info("ChatbotEngine initialise avec succes")
 
+    def _is_greeting(self, message: str) -> bool:
+        """
+        ✅ FIX : Détecte si le message est une simple salutation.
+
+        Returns:
+            True si c'est une salutation innocente
+        """
+        message_lower = message.lower().strip()
+
+        # Vérifier si le message contient uniquement une salutation
+        words = message_lower.split()
+        if len(words) <= 3:  # Messages courts
+            for greeting in self.SALUTATIONS_WHITELIST:
+                if greeting in message_lower:
+                    return True
+
+        return False
+
     def process_message(self, user_message: str) -> ChatbotResponse:
         """
         Point d'entree principal pour traiter les messages.
-        Version corrigée : Isolation du contexte RAG pour éviter la pollution sémantique.
+
+        ✅ VERSION CORRIGÉE :
+        - Bypass du guardrail pour les salutations
+        - Isolation du contexte RAG pour éviter la pollution sémantique
 
         Pipeline:
-        1. Reset local & Validation guardrails
-        2. Parsing d'intention
-        3. Court-circuit du contexte si intention non médicale
-        4. Execution des actions
-        5. Construction de la réponse isolée
+        1. Détection des salutations (bypass guardrail)
+        2. Reset local & Validation guardrails
+        3. Parsing d'intention
+        4. Court-circuit du contexte si intention non médicale
+        5. Execution des actions
+        6. Construction de la réponse isolée
         """
         start_time = datetime.now()
 
-        # --- FIX BUG 1 : RESET EXPLICITE DES VARIABLES LOCALES ---
-        # On s'assure qu'aucune donnée ne survit d'un appel précédent
+        # --- FIX : RESET EXPLICITE DES VARIABLES LOCALES ---
         rag_response = None
         action_results = []
         user_message = user_message.strip()
@@ -149,8 +185,19 @@ class ChatbotEngine:
                 latency_ms=0.0,
             )
 
+        # ✅ FIX : Bypass du guardrail pour les salutations
+        if self._is_greeting(user_message):
+            logger.info(f"⚡ Message de salutation détecté, bypass du guardrail")
+            latency = (datetime.now() - start_time).total_seconds() * 1000
+            return ChatbotResponse(
+                message="Bonjour ! Je suis votre assistant pour le service des urgences. Comment puis-je vous aider ?",
+                guardrail_status="allowed",
+                guardrail_details="greeting_bypass",
+                latency_ms=latency,
+                intent_type="greeting",
+            )
+
         # Etape 1: Validation via guardrails RAG (récupération initiale)
-        # Note: Le RAG est interrogé ici pour la sécurité (détection d'injection)
         rag_response = self._validate_and_query_rag(user_message)
 
         # Gestion immédiate des blocages de sécurité
@@ -169,7 +216,7 @@ class ChatbotEngine:
             f"Intent detecte: {intent.intent_type.value} (conf: {intent.confidence:.2f})"
         )
 
-        # --- FIX BUG 1.2 : FILTRAGE DU CONTEXTE (ISOLATION) ---
+        # --- FIX : FILTRAGE DU CONTEXTE (ISOLATION) ---
         # Si l'intention est purement administrative ou inconnue, on vide rag_response
         # pour éviter que le LLM n'hallucine un lien avec un protocole précédent.
         if intent.intent_type in [
@@ -192,7 +239,6 @@ class ChatbotEngine:
                 logger.info(f"Actions executees: {len(action_results)}")
 
         # Etape 4: Construire la reponse
-        # On passe la rag_response potentiellement nettoyée à l'étape précédente
         response_data = self.response_builder.build(
             intent=intent,
             rag_response=rag_response,
@@ -221,6 +267,8 @@ class ChatbotEngine:
         """
         Valide l'input et recupere le contexte protocole.
 
+        Version corrigée : Filtre les faux positifs sur les noms de famille.
+
         Utilise le RAG en mode chatbot avec:
         - Detection heuristique d'injection
         - Classification ML des menaces
@@ -230,7 +278,34 @@ class ChatbotEngine:
             return None
 
         try:
-            return self.rag_engine.query(query)
+            result = self.rag_engine.query(query)
+
+            # Le guardrail bloque "DAN" dans "Nico DENA" car il pense à "Do Anything Now"
+            if result and not result.is_safe:
+                # Vérifier si c'est un faux positif de type nom de famille
+                if "DAN" in result.status.upper():
+                    # Liste de noms contenant "dan" (insensible à la casse)
+                    common_names = [
+                        "DENA",
+                        "DANA",
+                        "DANIEL",
+                        "DANIELA",
+                        "DANIELLE",
+                        "DANTE",
+                        "DANI",
+                    ]
+
+                    # Vérifier si un de ces noms est dans la query (majuscules)
+                    query_upper = query.upper()
+                    if any(name in query_upper for name in common_names):
+                        logger.info(
+                            f"⚠️ Guardrail: Faux positif détecté (nom de famille), autorisation forcée"
+                        )
+                        result.is_safe = True
+                        result.status = "allowed_name_override"
+
+            return result
+
         except Exception as e:
             logger.error(f"Erreur RAG query: {e}")
             return None

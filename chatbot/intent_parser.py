@@ -70,9 +70,30 @@ class IntentParser:
     - Explications: "Explique la derniere decision"
     """
 
-    # Patterns regex pour detection rapide (en francais)
+    # ✅ CORRECTIF v2.2 : Patterns avec support un seul nom (prénom OU nom)
     PATTERNS: Dict[IntentType, List[Pattern]] = {
         IntentType.ADD_PATIENT: [
+            # Pattern 1 : "ajoute PRENOM NOM gravité COULEUR" (v2.1 - avec accent)
+            re.compile(
+                r"ajout(?:e|er?)?\s+([\wÀ-ÿ]+)\s+([\wÀ-ÿ]+)\s+(?:gravit[eé]|niveau)\s+(rouges?|jaunes?|verts?|gris)(?:\s+(.+))?",
+                re.IGNORECASE,
+            ),
+            # Pattern 1b : "ajoute PRENOM NOM COULEUR" (sans "gravité")
+            re.compile(
+                r"ajout(?:e|er?)?\s+([\wÀ-ÿ]+)\s+([\wÀ-ÿ]+)\s+(rouges?|jaunes?|verts?|gris)(?:\s+(?:pour|avec)\s+(.+))?",
+                re.IGNORECASE,
+            ),
+            # Pattern 1c : "ajoute UN_MOT gravité COULEUR" (v2.2 - un seul nom)
+            re.compile(
+                r"ajout(?:e|er?)?\s+([\wÀ-ÿ]+)\s+(?:gravit[eé]|niveau)\s+(rouges?|jaunes?|verts?|gris)(?:\s+(.+))?",
+                re.IGNORECASE,
+            ),
+            # Pattern 2 : "ajoute un patient au nom de X Y"
+            re.compile(
+                r"ajout(?:e|er?)?\s+(?:un\s+)?patient?\s+au\s+nom\s+de\s+([\wÀ-ÿ]+)\s+([\wÀ-ÿ]+)(?:\s+avec\s+niveau\s+)?(rouges?|jaunes?|verts?|gris)?(?:\s+(.+))?",
+                re.IGNORECASE,
+            ),
+            # Pattern 3 : Standard "Ajoute X patients COULEUR"
             re.compile(
                 r"ajout(?:e|er?)?\s+(\d+)?\s*patients?\s*(rouges?|jaunes?|verts?|gris)?(?:\s+avec\s+(.+))?",
                 re.IGNORECASE,
@@ -220,24 +241,235 @@ class IntentParser:
     def _extract_entities(
         self, intent_type: IntentType, match: re.Match, full_text: str
     ) -> Dict[str, Any]:
-        """Extrait les entites selon le type d'intention."""
+        """
+        Extrait les entites selon le type d'intention.
+
+        ✅ VERSION CORRIGÉE v2 : Support du format "ajoute PRENOM NOM gravite COULEUR"
+        """
 
         entities = {}
         groups = match.groups()
 
         if intent_type == IntentType.ADD_PATIENT:
-            # Pattern: (count)? (gravite)? (symptomes)?
-            count = int(groups[0]) if groups[0] else 1
-            gravite = self.GRAVITE_MAP.get(
-                groups[1].lower() if groups[1] else "", "JAUNE"
-            )
-            symptomes = (
-                groups[2].strip()
-                if len(groups) > 2 and groups[2]
-                else "Symptomes non precises"
-            )
+            print(f"🔍 DEBUG v2.2 EXTRACTION: Texte complet = '{full_text}'")
+            print(f"🔍 DEBUG v2.2: Groups capturés = {groups}")
 
-            entities = {"count": count, "gravite": gravite, "symptomes": symptomes}
+            # ✅ v2.2 : Détecter le format avec UN SEUL MOT (Pattern 1c)
+            # Exemple : "ajoute yassine gravité jaune"
+            # Groups: (yassine, jaune, symptomes?)
+            if (
+                groups
+                and groups[0]
+                and len(groups) >= 2
+                and groups[1]
+                and groups[1].lower() in self.GRAVITE_MAP
+            ):
+                # Pattern 1c détecté : Un seul mot + couleur
+                prenom_seul = groups[0].strip()
+
+                # Vérifier que ce n'est pas un mot-clé
+                mots_exclus = {"ajoute", "ajouter", "patient", "patients", "un"}
+
+                if prenom_seul.lower() not in mots_exclus:
+                    gravite_raw = groups[1].lower()
+                    gravite = self.GRAVITE_MAP.get(gravite_raw, "JAUNE")
+                    symptomes = (
+                        groups[2].strip()
+                        if len(groups) > 2 and groups[2]
+                        else "Symptômes non précisés"
+                    )
+
+                    print(
+                        f"🔍 DEBUG v2.2: gravite_raw = '{gravite_raw}' → gravite = '{gravite}'"
+                    )
+
+                    entities = {
+                        "count": 1,
+                        "prenom": prenom_seul.capitalize(),
+                        "nom": "",  # ✅ v2.2 : Chaîne vide si nom manquant
+                        "gravite": gravite,
+                        "symptomes": symptomes,
+                    }
+                    print(
+                        f"✅ v2.2: Format 'ajoute UN_MOT' détecté (prénom seul) : {entities['prenom']} - Gravité: {gravite}"
+                    )
+
+                    # Extraction âge
+                    age_match = re.search(r"(\d+)\s*ans?", full_text.lower())
+                    if age_match:
+                        entities["age"] = int(age_match.group(1))
+                        print(f"🔍 v2.2: ÂGE DÉTECTÉ : {entities['age']} ans")
+
+                    return entities
+
+            # ✅ v2.2 : Détecter le format "ajoute PRENOM NOM gravité COULEUR" (2 mots)
+            # Exemples : "ajoute dena nico gravité vert", "ajoute mboup modou vert"
+
+            # Vérifier si le premier groupe ressemble à un prénom (pas un chiffre, pas "patient")
+            if (
+                groups
+                and groups[0]
+                and not groups[0].isdigit()
+                and groups[0].lower() not in ["patient", "patients", "un"]
+            ):
+                # On a probablement : (prenom, nom, gravite?, symptomes?)
+                prenom_candidat = groups[0].strip()
+                nom_candidat = (
+                    groups[1].strip() if len(groups) > 1 and groups[1] else None
+                )
+
+                # Vérifier que ce sont bien des noms (pas des mots-clés)
+                mots_exclus = {
+                    "ajoute",
+                    "ajouter",
+                    "patient",
+                    "comme",
+                    "rouge",
+                    "jaune",
+                    "vert",
+                    "gris",
+                    "avec",
+                    "niveau",
+                    "sans",
+                    "pour",
+                    "gravite",
+                    "gravité",
+                }
+
+                if (
+                    nom_candidat
+                    and prenom_candidat.lower() not in mots_exclus
+                    and nom_candidat.lower() not in mots_exclus
+                ):
+
+                    # ✅ Format détecté : "ajoute PRENOM NOM gravité? COULEUR?"
+                    gravite_raw = (
+                        groups[2].lower() if len(groups) > 2 and groups[2] else ""
+                    )
+                    gravite = self.GRAVITE_MAP.get(gravite_raw, "JAUNE")
+                    symptomes = (
+                        groups[3].strip()
+                        if len(groups) > 3 and groups[3]
+                        else "Symptômes non précisés"
+                    )
+
+                    print(
+                        f"🔍 DEBUG v2.2: gravite_raw = '{gravite_raw}' → gravite = '{gravite}'"
+                    )
+
+                    entities = {
+                        "count": 1,
+                        "prenom": prenom_candidat.capitalize(),
+                        "nom": nom_candidat.upper(),
+                        "gravite": gravite,
+                        "symptomes": symptomes,
+                    }
+                    print(
+                        f"✅ v2.2: Format 'ajoute PRENOM NOM' détecté : {entities['prenom']} {entities['nom']} - Gravité: {gravite}"
+                    )
+
+                    # Extraction âge
+                    age_match = re.search(r"(\d+)\s*ans?", full_text.lower())
+                    if age_match:
+                        entities["age"] = int(age_match.group(1))
+                        print(f"🔍 v2.2: ÂGE DÉTECTÉ : {entities['age']} ans")
+
+                    return entities
+
+            # Si on arrive ici, ce n'est pas le format "ajoute PRENOM NOM"
+            # On vérifie les autres formats
+
+            if "au nom de" in full_text.lower():
+                # Pattern "au nom de X Y" : groups = (prenom, nom, gravite?, symptomes?)
+                if len(groups) >= 2:
+                    prenom = groups[0].strip()
+                    nom = groups[1].strip()
+                    gravite = self.GRAVITE_MAP.get(
+                        groups[2].lower() if len(groups) > 2 and groups[2] else "",
+                        "JAUNE",
+                    )
+                    symptomes = (
+                        groups[3].strip()
+                        if len(groups) > 3 and groups[3]
+                        else "Symptômes non précisés"
+                    )
+
+                    entities = {
+                        "count": 1,
+                        "prenom": prenom.capitalize(),
+                        "nom": nom.upper(),
+                        "gravite": gravite,
+                        "symptomes": symptomes,
+                    }
+                    print(
+                        f"✅ v2.2: Nom détecté via pattern 'au nom de': {entities['prenom']} {entities['nom']}"
+                    )
+            else:
+                # Pattern standard : (count)? (gravite)? (symptomes)?
+                count = int(groups[0]) if groups[0] and groups[0].isdigit() else 1
+                gravite = self.GRAVITE_MAP.get(
+                    groups[1].lower() if len(groups) > 1 and groups[1] else "", "JAUNE"
+                )
+                symptomes = (
+                    groups[2].strip()
+                    if len(groups) > 2 and groups[2]
+                    else "Symptomes non precises"
+                )
+
+                entities = {"count": count, "gravite": gravite, "symptomes": symptomes}
+
+                # ✅ Recherche de noms dans le texte (pattern général)
+                name_pattern = r"\b([A-ZÀ-ÿa-z][a-zà-ÿ]+)\s+([A-ZÀ-ÿa-z][A-Za-zÀ-ÿ]+)\b"
+
+                name_matches = list(re.finditer(name_pattern, full_text))
+                print(
+                    f"🔍 v2.2: {len(name_matches)} paires détectées (recherche générale): {[m.groups() for m in name_matches]}"
+                )
+
+                mots_exclus = {
+                    "ajoute",
+                    "ajouter",
+                    "patient",
+                    "comme",
+                    "rouge",
+                    "jaune",
+                    "vert",
+                    "gris",
+                    "avec",
+                    "niveau",
+                    "sans",
+                    "pour",
+                    "gravite",
+                }
+
+                for match_name in name_matches:
+                    prenom_candidat = match_name.group(1)
+                    nom_candidat = match_name.group(2)
+
+                    print(
+                        f"🔍 v2.2: Test candidats '{prenom_candidat}' '{nom_candidat}'"
+                    )
+
+                    if (
+                        prenom_candidat.lower() not in mots_exclus
+                        and nom_candidat.lower() not in mots_exclus
+                    ):
+                        entities["prenom"] = prenom_candidat.capitalize()
+                        entities["nom"] = nom_candidat.upper()
+                        print(
+                            f"✅ v2.2: NOM DÉTECTÉ (recherche générale): {entities['prenom']} {entities['nom']}"
+                        )
+                        break
+
+                if "prenom" not in entities:
+                    print(f"❌ v2.2: AUCUN NOM DÉTECTÉ dans '{full_text}'")
+
+            # Extraction âge (commun à tous les formats)
+            if "age" not in entities:
+                age_match = re.search(r"(\d+)\s*ans?", full_text.lower())
+                if age_match:
+                    entities["age"] = int(age_match.group(1))
+                    print(f"🔍 v2.2: ÂGE DÉTECTÉ : {entities['age']} ans")
 
         elif intent_type == IntentType.TRANSPORT_CONSULTATION:
             entities = {"patient_id": groups[0]}
@@ -249,7 +481,6 @@ class IntentParser:
             }
 
         elif intent_type == IntentType.ASK_PROTOCOL:
-            # Extraire la condition medicale
             condition = groups[0] if groups else full_text
             entities = {"condition": condition.strip()}
 
@@ -262,11 +493,12 @@ class IntentParser:
 
 Analyse cette commande et retourne un JSON avec:
 - intent: ADD_PATIENT | TRANSPORT_CONSULTATION | TRANSPORT_UNITE | ASSIGN_ROOM | GET_STATUS | ASK_PROTOCOL | EXPLAIN_DECISION | LIST_PATIENTS | UNKNOWN
-- entities: dictionnaire des entites extraites (count, gravite, symptomes, patient_id, condition, etc.)
+- entities: dictionnaire des entites extraites (count, gravite, symptomes, patient_id, condition, prenom, nom, etc.)
 - confidence: score de confiance (0-1)
 
 Exemples:
 - "Ajoute 5 patients rouges avec dyspnee" -> {{"intent": "ADD_PATIENT", "entities": {{"count": 5, "gravite": "ROUGE", "symptomes": "dyspnee"}}, "confidence": 0.95}}
+- "ajoute dena nico gravite vert" -> {{"intent": "ADD_PATIENT", "entities": {{"prenom": "Dena", "nom": "Nico", "gravite": "VERT", "count": 1}}, "confidence": 0.9}}
 - "Quel protocole pour douleur thoracique?" -> {{"intent": "ASK_PROTOCOL", "entities": {{"condition": "douleur thoracique"}}, "confidence": 0.9}}
 
 Commande a analyser: "{text}"
@@ -285,13 +517,20 @@ Reponds UNIQUEMENT avec le JSON, sans explication."""
 
             # Enregistrer les métriques du parsing (chatbot)
             if hasattr(response, "usage") and response.usage:
-                monitor.log_metrics_simple(
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens,
-                    latency_ms=latency_ms,
-                    model_name="ministral-3b-2512",
-                    source="chatbot",
-                )
+                try:
+                    from monitoring.monitoring import monitor
+
+                    monitor.log_metrics_simple(
+                        input_tokens=response.usage.prompt_tokens,
+                        output_tokens=response.usage.completion_tokens,
+                        latency_ms=latency_ms,
+                        model_name="ministral-3b-2512",
+                        source="chatbot",
+                    )
+                except ImportError:
+                    pass
+                except Exception as e:
+                    logger.warning(f"Monitoring non disponible: {e}")
 
             response_text = response.choices[0].message.content.strip()
 
@@ -341,7 +580,8 @@ Reponds UNIQUEMENT avec le JSON, sans explication."""
         explanation = ""
 
         if intent.intent_type == IntentType.ADD_PATIENT:
-            count = intent.entities.get("count", 1)
+            count = intent.entities.get("count", 1) or 1
+
             # On prépare les paramètres de base
             base_params = {
                 "gravite": intent.entities.get("gravite", "JAUNE"),

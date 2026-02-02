@@ -216,54 +216,131 @@ class ActionExecutor:
         self,
         gravite: str = "JAUNE",
         symptomes: str = "Symptomes non precises",
-        count: int = 1,
+        prenom: str = None,
+        nom: str = None,
+        age: int = None,
+        count: int = None,
         **kwargs,
     ) -> Dict[str, Any]:
         """
         Ajoute un ou plusieurs patients.
-        Genere des donnees aleatoires pour les champs non specifies.
-        Exemple: "Ajoute 5 patients rouges avec Brûlure étendue du 3ème degré"
+        Version v2.2 : Ne génère PAS de nom/prénom aléatoire si manquant.
+
         Args:
             gravite: Niveau de gravite (ROUGE, JAUNE, VERT, GRIS)
             symptomes: Description des symptomes
-            count: Nombre de patients a ajouter
+            prenom: Prénom du patient (si None et count=1 → "", sinon aléatoire)
+            nom: Nom du patient (si None et count=1 → "", sinon aléatoire)
+            age: Âge du patient (optionnel, aléatoire si None)
+            count: Nombre de patients a ajouter (défaut 1)
+
         Returns:
             Resultat avec liste des patients ajoutes
         """
+        # ✅ Gestion robuste de count
+        if count is None:
+            count = 1
+
+        try:
+            count = int(count)
+            if count < 1:
+                count = 1
+        except (TypeError, ValueError):
+            logger.warning(
+                f"Valeur invalide pour count: {count}, utilisation de 1 par défaut"
+            )
+            count = 1
+
+        # === DEBUG ===
+        print(f"🔍 _add_patient appelé avec:")
+        print(f"   - prenom: {prenom}")
+        print(f"   - nom: {nom}")
+        print(f"   - gravite: {gravite}")
+        print(f"   - count: {count} (type: {type(count)})")
+        # === FIN DEBUG ===
+
         added = []
         errors = []
+
         # Normaliser la gravite
         gravite_upper = gravite.upper()
         if gravite_upper not in ["ROUGE", "JAUNE", "VERT", "GRIS"]:
             gravite_upper = "JAUNE"
 
+        # ✅ v2.2 : Si prenom OU nom fourni (mais pas les deux) et count=1
+        # → Utiliser la méthode avec nom personnalisé (avec chaîne vide pour le manquant)
+        if count == 1 and (prenom or nom):
+            # Si on a au moins un des deux, on utilise la méthode personnalisée
+            prenom_final = prenom if prenom else ""
+            nom_final = nom if nom else ""
+
+            try:
+                result = self.controller.ajouter_patient_avec_nom(
+                    prenom=prenom_final,
+                    nom=nom_final,
+                    gravite=gravite_upper,
+                    age=age,
+                    symptomes=symptomes,
+                )
+
+                if result.get("success"):
+                    # Construire le nom d'affichage
+                    nom_affichage = f"{prenom_final} {nom_final}".strip()
+                    if not nom_affichage:
+                        nom_affichage = "Patient sans nom"
+
+                    added.append(
+                        {
+                            "patient_id": result["patient_id"],
+                            "nom": nom_affichage,
+                            "gravite": gravite_upper,
+                            "salle": result.get("salle", "Non assigné"),
+                        }
+                    )
+                else:
+                    errors.append(result.get("error", "Erreur inconnue"))
+
+                return {
+                    "success": len(added) > 0,
+                    "added_count": len(added),
+                    "patients": added,
+                    "errors": errors if errors else None,
+                }
+
+            except Exception as e:
+                logger.error(f"Erreur ajout patient avec nom: {e}")
+                return {"success": False, "error": str(e)}
+
+        # ✅ v2.2 : Génération aléatoire UNIQUEMENT si count > 1 OU (prenom=None ET nom=None)
         for i in range(count):
-            patient_id = kwargs.get("patient_id", f"P{random.randint(1000, 9999)}")
-            prenom = kwargs.get("prenom") or random.choice(self.PRENOMS)
-            nom = kwargs.get("nom") or random.choice(self.NOMS)
-            age = kwargs.get("age") or random.randint(18, 85)
+            patient_id = f"P{random.randint(10000, 99999)}-{random.randint(0, 999):03d}"
+            prenom_gen = prenom or random.choice(self.PRENOMS)
+            nom_gen = nom or random.choice(self.NOMS)
+            age_gen = age or random.randint(18, 85)
 
             try:
                 patient = Patient(
                     id=patient_id,
-                    prenom=prenom,
-                    nom=nom,
+                    prenom=prenom_gen,
+                    nom=nom_gen,
                     gravite=Gravite[gravite_upper],
                     symptomes=symptomes,
-                    age=age,
+                    age=age_gen,
                     antecedents=[],
                     arrived_at=self.state.current_time,
                     statut=StatutPatient.ATTENTE_TRIAGE,
                 )
+
                 # Ajouter le patient
                 result = self.controller.ajouter_patient(patient)
+
                 if result.get("success"):
                     # Assigner automatiquement a une salle
                     room_result = self.controller.assigner_salle_attente(patient_id)
                     added.append(
                         {
                             "patient_id": patient_id,
-                            "nom": f"{prenom} {nom}",
+                            "nom": f"{prenom_gen} {nom_gen}",
                             "gravite": gravite_upper,
                             "salle": room_result.get("salle_id", "Non assigne"),
                         }

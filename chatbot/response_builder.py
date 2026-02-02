@@ -4,12 +4,10 @@ Formate les reponses combinees pour l'interface utilisateur.
 Version améliorée avec génération de langage naturel et monitoring.
 """
 
-import time
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from .intent_parser import ParsedIntent, IntentType
-from monitoring.monitoring import monitor
 
 
 class ResponseBuilder:
@@ -97,7 +95,7 @@ class ResponseBuilder:
 
     def _generate_natural_response(self, prompt: str, context: str = "") -> str:
         """
-        Génère une réponse naturelle via Mistral avec monitoring.
+        Génère une réponse naturelle via Mistral.
 
         Args:
             prompt: Instructions pour la génération
@@ -120,10 +118,8 @@ Réponds toujours en français."""
             if context:
                 full_prompt = f"{prompt}\n\nContexte/Données:\n{context}"
 
-            start_time = time.perf_counter()
-
             response = self.mistral_client.chat.complete(
-                model="ministral-8b-latest",
+                model="mistral-large-latest",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": full_prompt},
@@ -131,19 +127,6 @@ Réponds toujours en français."""
                 max_tokens=500,
                 temperature=0.7,
             )
-
-            latency_ms = (time.perf_counter() - start_time) * 1000
-
-            # Enregistrer les métriques du chatbot
-            if hasattr(response, "usage") and response.usage:
-                monitor.log_metrics_simple(
-                    input_tokens=response.usage.prompt_tokens,
-                    output_tokens=response.usage.completion_tokens,
-                    latency_ms=latency_ms,
-                    model_name="ministral-8b-latest",
-                    source="chatbot",
-                )
-
             return response.choices[0].message.content.strip()
         except Exception as e:
             return None
