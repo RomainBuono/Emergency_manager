@@ -12,5 +12,5 @@ __all__ = [
     "MetricsTracker",
     "RequestMetrics",
     "call_model",
-    "call_model_with_messages"
+    "call_model_with_messages",
 ]

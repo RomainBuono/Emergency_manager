@@ -8,16 +8,13 @@ from .monitoring import monitor
 
 try:
     import litellm
+
     LITELLM_AVAILABLE = True
 except ImportError:
     LITELLM_AVAILABLE = False
 
 
-def call_model(
-    model_name: str,
-    prompt: str,
-    source: str = "rag"
-) -> Tuple[str, float]:
+def call_model(model_name: str, prompt: str, source: str = "rag") -> Tuple[str, float]:
     """
     Appelle un modèle LLM via LiteLLM avec monitoring intégré.
 
@@ -36,8 +33,7 @@ def call_model(
 
     # Appel utilisant LiteLLM wrappé par EcoLogits
     response = litellm.completion(
-        model=f"mistral/{model_name}",
-        messages=[{"role": "user", "content": prompt}]
+        model=f"mistral/{model_name}", messages=[{"role": "user", "content": prompt}]
     )
 
     latency_ms = (time.perf_counter() - start_time) * 1000
@@ -50,9 +46,7 @@ def call_model(
 
 
 def call_model_with_messages(
-    model_name: str,
-    messages: list,
-    source: str = "chatbot"
+    model_name: str, messages: list, source: str = "chatbot"
 ) -> Tuple[str, dict]:
     """
     Appelle un modèle LLM avec un historique de messages.
@@ -70,10 +64,7 @@ def call_model_with_messages(
 
     start_time = time.perf_counter()
 
-    response = litellm.completion(
-        model=f"mistral/{model_name}",
-        messages=messages
-    )
+    response = litellm.completion(model=f"mistral/{model_name}", messages=messages)
 
     latency_ms = (time.perf_counter() - start_time) * 1000
 

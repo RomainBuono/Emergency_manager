@@ -5,6 +5,7 @@ from dataclasses import dataclass
 # Tentative d'initialisation d'EcoLogits
 try:
     from ecologits import EcoLogits
+
     EcoLogits.init(providers="litellm", electricity_mix_zone="FRA")
     ECOLOGITS_AVAILABLE = True
 except ImportError:
@@ -16,6 +17,7 @@ except Exception:
 @dataclass
 class RequestMetrics:
     """Métriques d'une requête individuelle."""
+
     timestamp: datetime
     source: str  # "agent", "chatbot", "rag"
     model_name: str
@@ -48,7 +50,7 @@ class MetricsTracker:
             "codestral-latest": {"input": 0.3, "output": 0.9},
             "mistral-large-latest": {"input": 0.5, "output": 1.5},
             "ministral-8b-latest": {"input": 0.1, "output": 0.1},
-            "mistral-small-latest": {"input": 0.2, "output": 0.6}
+            "mistral-small-latest": {"input": 0.2, "output": 0.6},
         }
 
         # Accumulateurs globaux pour le dashboard
@@ -60,16 +62,30 @@ class MetricsTracker:
 
         # Accumulateurs par composant
         self.by_source: Dict[str, Dict[str, float]] = {
-            "agent": {"cost": 0.0, "energy": 0.0, "co2": 0.0, "latency": 0.0, "count": 0},
-            "chatbot": {"cost": 0.0, "energy": 0.0, "co2": 0.0, "latency": 0.0, "count": 0},
-            "rag": {"cost": 0.0, "energy": 0.0, "co2": 0.0, "latency": 0.0, "count": 0}
+            "agent": {
+                "cost": 0.0,
+                "energy": 0.0,
+                "co2": 0.0,
+                "latency": 0.0,
+                "count": 0,
+            },
+            "chatbot": {
+                "cost": 0.0,
+                "energy": 0.0,
+                "co2": 0.0,
+                "latency": 0.0,
+                "count": 0,
+            },
+            "rag": {"cost": 0.0, "energy": 0.0, "co2": 0.0, "latency": 0.0, "count": 0},
         }
 
         # Historique des requêtes (pour graphiques)
         self.request_history: List[RequestMetrics] = []
         self.max_history_size = 100
 
-    def _get_price_query(self, model_name: str, input_tokens: int, output_tokens: int) -> float:
+    def _get_price_query(
+        self, model_name: str, input_tokens: int, output_tokens: int
+    ) -> float:
         """
         Calcule le coût d'une requête en dollars.
 
@@ -91,11 +107,7 @@ class MetricsTracker:
         return input_cost + output_cost
 
     def log_metrics(
-        self,
-        response,
-        latency_ms: float,
-        model_name: str,
-        source: str = "rag"
+        self, response, latency_ms: float, model_name: str, source: str = "rag"
     ) -> Dict[str, Any]:
         """
         Extrait et enregistre les métriques d'une réponse LiteLLM.
@@ -117,7 +129,7 @@ class MetricsTracker:
         dollar_cost = self._get_price_query(model_name, input_tokens, output_tokens)
 
         # 3. Impact écologique via EcoLogits
-        if ECOLOGITS_AVAILABLE and hasattr(response, 'impacts') and response.impacts:
+        if ECOLOGITS_AVAILABLE and hasattr(response, "impacts") and response.impacts:
             energy_value = response.impacts.energy.value
             energy_usage = getattr(energy_value, "min", energy_value)
             co2_value = response.impacts.gwp.value
@@ -155,13 +167,13 @@ class MetricsTracker:
             dollar_cost=dollar_cost,
             energy_kwh=energy_usage,
             co2_kg=co2_impact,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
         self.request_history.append(metrics)
 
         # Limiter la taille de l'historique
         if len(self.request_history) > self.max_history_size:
-            self.request_history = self.request_history[-self.max_history_size:]
+            self.request_history = self.request_history[-self.max_history_size :]
 
         return {
             "dollar_cost": dollar_cost,
@@ -170,7 +182,7 @@ class MetricsTracker:
             "latency_ms": latency_ms,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "source": source
+            "source": source,
         }
 
     def log_metrics_simple(
@@ -179,7 +191,7 @@ class MetricsTracker:
         output_tokens: int,
         latency_ms: float,
         model_name: str,
-        source: str = "rag"
+        source: str = "rag",
     ) -> Dict[str, Any]:
         """
         Enregistre les métriques sans réponse LiteLLM (pour appels directs).
@@ -217,12 +229,12 @@ class MetricsTracker:
             dollar_cost=dollar_cost,
             energy_kwh=energy_usage,
             co2_kg=co2_impact,
-            latency_ms=latency_ms
+            latency_ms=latency_ms,
         )
         self.request_history.append(metrics)
 
         if len(self.request_history) > self.max_history_size:
-            self.request_history = self.request_history[-self.max_history_size:]
+            self.request_history = self.request_history[-self.max_history_size :]
 
         return {
             "dollar_cost": dollar_cost,
@@ -231,7 +243,7 @@ class MetricsTracker:
             "latency_ms": latency_ms,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
-            "source": source
+            "source": source,
         }
 
     def get_stats_by_source(self, source: str) -> Dict[str, float]:
@@ -257,10 +269,10 @@ class MetricsTracker:
                 "total_energy_kwh": self.total_energy_kwh,
                 "total_co2_kg": self.total_co2_kg,
                 "avg_latency_ms": self.get_average_latency(),
-                "total_requests": self.request_count
+                "total_requests": self.request_count,
             },
             "by_source": self.by_source,
-            "recent_requests": len(self.request_history)
+            "recent_requests": len(self.request_history),
         }
 
     def reset(self):
@@ -273,7 +285,11 @@ class MetricsTracker:
 
         for source in self.by_source:
             self.by_source[source] = {
-                "cost": 0.0, "energy": 0.0, "co2": 0.0, "latency": 0.0, "count": 0
+                "cost": 0.0,
+                "energy": 0.0,
+                "co2": 0.0,
+                "latency": 0.0,
+                "count": 0,
             }
 
         self.request_history = []

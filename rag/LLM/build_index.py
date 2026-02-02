@@ -5,15 +5,18 @@ from pathlib import Path
 from typing import Final, List, Dict
 from sentence_transformers import SentenceTransformer
 
+
 def build_medical_index() -> None:
     """
     Transforme les protocoles JSON en index vectoriel FAISS avec Boosting de Précision.
     Utilise une structure de document enrichie pour améliorer la discrimination sémantique.
     """
     # 1. Configuration des constantes
-    MODEL_NAME: Final[str] = 'paraphrase-multilingual-MiniLM-L12-v2'
+    MODEL_NAME: Final[str] = "paraphrase-multilingual-MiniLM-L12-v2"
     # Utilisation de chemins robustes
-    BASE_PATH: Final[Path] = Path(__file__).resolve().parent.parent.parent / "data_regle"
+    BASE_PATH: Final[Path] = (
+        Path(__file__).resolve().parent.parent.parent / "data_regle"
+    )
     JSON_FILE: Final[Path] = BASE_PATH / "protocoles.json"
     INDEX_FILE: Final[Path] = BASE_PATH / "protocoles.index"
 
@@ -36,10 +39,10 @@ def build_medical_index() -> None:
     # On structure le document pour que l'Embedding se focalise sur les bons clusters
     documents: List[str] = []
     for p in protocols:
-        patho = p.get('pathologie', 'Inconnu')
-        symptomes_list = p.get('symptomes', [])
+        patho = p.get("pathologie", "Inconnu")
+        symptomes_list = p.get("symptomes", [])
         sympts_str = ", ".join(symptomes_list)
-        
+
         # TECHNIQUE DE BOOSTING AVANCÉE :
         # - Répétition du titre (Boosting de classe)
         # - Séparateurs sémantiques (|) pour l'attention du Transformer
@@ -55,14 +58,11 @@ def build_medical_index() -> None:
     print(f"Encodage de {len(documents)} protocoles avec {MODEL_NAME}...")
     # On charge le modèle une seule fois ici
     encoder = SentenceTransformer(MODEL_NAME)
-    
+
     # Encodage massif (convert_to_numpy=True assure la compatibilité FAISS)
     embeddings = encoder.encode(
-        documents, 
-        batch_size=32, 
-        show_progress_bar=True, 
-        convert_to_numpy=True
-    ).astype('float32')
+        documents, batch_size=32, show_progress_bar=True, convert_to_numpy=True
+    ).astype("float32")
 
     # 6. Création de l'index FAISS
     # IndexFlatIP + normalize_L2 = Similarité Cosinus (Best practice pour NLP)
@@ -75,11 +75,12 @@ def build_medical_index() -> None:
 
     # 7. Sauvegarde sur disque
     faiss.write_index(index, str(INDEX_FILE))
-    
+
     print(f"Index FAISS boosté créé avec succès !")
     print(f"rotocoles indexés : {index.ntotal}")
     print(f"Dimension vectorielle : {dimension}")
     print(f"Fichier : {INDEX_FILE}")
+
 
 if __name__ == "__main__":
     build_medical_index()

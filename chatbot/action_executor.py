@@ -22,23 +22,119 @@ class ActionExecutor:
     """
 
     # Noms et prenoms pour generation aleatoire
-    NOMS = ["Martin", "Bernard", "Dubois", "Thomas", "Robert", "Petit", "Durand", "Leroy", 
-    "Moreau", "Simon", "Laurent", "Lefebvre", "Besson", "Dumas", "Renaud", "Roux", 
-    "Dupont", "Lebrun", "Weber", "Payet", "Germain", "Müller", "Silva", "Nguyen", 
-    "García", "Smith", "Diallo", "Rossi", "Hassan", "Chen", "Kumar", "Ivanov", 
-    "Yılmaz", "Abubakar", "Kwon", "Sato", "Cohen", "Janssen", "Kamau", "O'Sullivan", 
-    "Petrov", "Fernandez", "Ben Saïd", "Traoré", "Sokolov", "Wang", "Novak", "Santos", 
-    "Singh", "Ibrahim"
+    NOMS = [
+        "Martin",
+        "Bernard",
+        "Dubois",
+        "Thomas",
+        "Robert",
+        "Petit",
+        "Durand",
+        "Leroy",
+        "Moreau",
+        "Simon",
+        "Laurent",
+        "Lefebvre",
+        "Besson",
+        "Dumas",
+        "Renaud",
+        "Roux",
+        "Dupont",
+        "Lebrun",
+        "Weber",
+        "Payet",
+        "Germain",
+        "Müller",
+        "Silva",
+        "Nguyen",
+        "García",
+        "Smith",
+        "Diallo",
+        "Rossi",
+        "Hassan",
+        "Chen",
+        "Kumar",
+        "Ivanov",
+        "Yılmaz",
+        "Abubakar",
+        "Kwon",
+        "Sato",
+        "Cohen",
+        "Janssen",
+        "Kamau",
+        "O'Sullivan",
+        "Petrov",
+        "Fernandez",
+        "Ben Saïd",
+        "Traoré",
+        "Sokolov",
+        "Wang",
+        "Novak",
+        "Santos",
+        "Singh",
+        "Ibrahim",
     ]
     PRENOMS = [
-        "Sophie", "Lucas", "Emma", "Thomas", "Lea", "Hugo", "Chloe", "Nathan", 
-        "Julie", "Mathis", "Marie", "Antoine", "Yasmine", "Kenji", "Aïcha", "Mateo", 
-        "Inès", "Liam", "Fatima", "Sasha", "Hiroshi", "Elena", "Amine", "Ji-woo", 
-        "Diego", "Zahra", "Lars", "Priya", "Samuel", "Mei", "Omar", "Svetlana", 
-        "Ravi", "Camille", "Malik", "Ananya", "Stefan", "Leila", "Dimitri", "Noa", 
-        "Kwame", "Ayumi", "Vladimir", "Chantal", "Rajesh", "Océane", "Tariq", "Sven", 
-        "Zeynep", "Moussa", "Aiko", "Matteo", "Jin", "Saliou", "Anya", "Isha", 
-        "Zayd", "Théo", "Linh", "Dante"
+        "Sophie",
+        "Lucas",
+        "Emma",
+        "Thomas",
+        "Lea",
+        "Hugo",
+        "Chloe",
+        "Nathan",
+        "Julie",
+        "Mathis",
+        "Marie",
+        "Antoine",
+        "Yasmine",
+        "Kenji",
+        "Aïcha",
+        "Mateo",
+        "Inès",
+        "Liam",
+        "Fatima",
+        "Sasha",
+        "Hiroshi",
+        "Elena",
+        "Amine",
+        "Ji-woo",
+        "Diego",
+        "Zahra",
+        "Lars",
+        "Priya",
+        "Samuel",
+        "Mei",
+        "Omar",
+        "Svetlana",
+        "Ravi",
+        "Camille",
+        "Malik",
+        "Ananya",
+        "Stefan",
+        "Leila",
+        "Dimitri",
+        "Noa",
+        "Kwame",
+        "Ayumi",
+        "Vladimir",
+        "Chantal",
+        "Rajesh",
+        "Océane",
+        "Tariq",
+        "Sven",
+        "Zeynep",
+        "Moussa",
+        "Aiko",
+        "Matteo",
+        "Jin",
+        "Saliou",
+        "Anya",
+        "Isha",
+        "Zayd",
+        "Théo",
+        "Linh",
+        "Dante",
     ]
 
     def __init__(self, controller, state: EmergencyState):
@@ -53,7 +149,6 @@ class ActionExecutor:
         self.state = state
 
     def execute(self, action_plan) -> List[Dict[str, Any]]:
-
         """
         Execute toutes les actions du plan.
         Ex: "Ajoute 3 patients rouges avec une détresse respiratoire"
@@ -74,21 +169,25 @@ class ActionExecutor:
 
             try:
                 result = self._execute_single(tool_name, params)
-                results.append({
-                    "tool": tool_name,
-                    "params": params,
-                    "success": result.get("success", False),
-                    "result": result
-                })
+                results.append(
+                    {
+                        "tool": tool_name,
+                        "params": params,
+                        "success": result.get("success", False),
+                        "result": result,
+                    }
+                )
 
             except Exception as e:
                 logger.error(f"Action echouee: {tool_name} - {e}")
-                results.append({
-                    "tool": tool_name,
-                    "params": params,
-                    "success": False,
-                    "error": str(e)
-                })
+                results.append(
+                    {
+                        "tool": tool_name,
+                        "params": params,
+                        "success": False,
+                        "error": str(e),
+                    }
+                )
 
         return results
 
@@ -118,8 +217,8 @@ class ActionExecutor:
         gravite: str = "JAUNE",
         symptomes: str = "Symptomes non precises",
         count: int = 1,
-        **kwargs ) -> Dict[str, Any]:
-
+        **kwargs,
+    ) -> Dict[str, Any]:
         """
         Ajoute un ou plusieurs patients.
         Genere des donnees aleatoires pour les champs non specifies.
@@ -146,40 +245,42 @@ class ActionExecutor:
 
             try:
                 patient = Patient(
-                id=patient_id,
-                prenom=prenom,
-                nom=nom,
-                gravite=Gravite[gravite_upper],
-                symptomes=symptomes,
-                age=age,    
-                antecedents=[],
-                arrived_at=self.state.current_time,
-                statut=StatutPatient.ATTENTE_TRIAGE
-            )
+                    id=patient_id,
+                    prenom=prenom,
+                    nom=nom,
+                    gravite=Gravite[gravite_upper],
+                    symptomes=symptomes,
+                    age=age,
+                    antecedents=[],
+                    arrived_at=self.state.current_time,
+                    statut=StatutPatient.ATTENTE_TRIAGE,
+                )
                 # Ajouter le patient
                 result = self.controller.ajouter_patient(patient)
                 if result.get("success"):
                     # Assigner automatiquement a une salle
                     room_result = self.controller.assigner_salle_attente(patient_id)
-                    added.append({
-                        "patient_id": patient_id,
-                        "nom": f"{prenom} {nom}",
-                        "gravite": gravite_upper,
-                        "salle": room_result.get("salle_id", "Non assigne")
-                    })
+                    added.append(
+                        {
+                            "patient_id": patient_id,
+                            "nom": f"{prenom} {nom}",
+                            "gravite": gravite_upper,
+                            "salle": room_result.get("salle_id", "Non assigne"),
+                        }
+                    )
                 else:
                     errors.append(f"{patient_id}: {result.get('error')}")
 
             except Exception as e:
                 errors.append(f"Erreur creation patient: {str(e)}")
-        
+
         return {
             "success": len(added) > 0,
             "added_count": len(added),
             "patients": added,
-            "errors": errors if errors else None
+            "errors": errors if errors else None,
         }
-    
+
     def _transport_consultation(self, patient_id: str, **kwargs) -> Dict[str, Any]:
         """
         Demarre le transport vers consultation.
@@ -191,13 +292,10 @@ class ActionExecutor:
         if not staff_dispo:
             return {
                 "success": False,
-                "error": "Aucun personnel disponible pour le transport"
+                "error": "Aucun personnel disponible pour le transport",
             }
 
-        return self.controller.demarrer_transport_consultation(
-            patient_id,
-            staff_dispo
-        )
+        return self.controller.demarrer_transport_consultation(patient_id, staff_dispo)
 
     def _transport_unite(self, patient_id: str, **kwargs) -> Dict[str, Any]:
         """
@@ -209,20 +307,19 @@ class ActionExecutor:
         if not staff_dispo:
             return {
                 "success": False,
-                "error": "Aucun personnel disponible pour le transport"
+                "error": "Aucun personnel disponible pour le transport",
             }
 
-        return self.controller.demarrer_transport_unite(
-            patient_id,
-            staff_dispo
-        )
+        return self.controller.demarrer_transport_unite(patient_id, staff_dispo)
 
     def _find_available_staff(self) -> str:
         """Trouve un membre du personnel disponible pour transport."""
         for staff in self.state.staff:
-            if (staff.disponible and
-                not staff.en_transport and
-                staff.type.value in ["infirmier(ere)_mobile", "aide_soignant"]):
+            if (
+                staff.disponible
+                and not staff.en_transport
+                and staff.type.value in ["infirmier(ere)_mobile", "aide_soignant"]
+            ):
                 return staff.id
         return None
 
@@ -232,13 +329,30 @@ class ActionExecutor:
         patients = etat.get("patients", {})
 
         nb_total = len([p for p in patients.values() if p.get("statut") != "sorti"])
-        nb_attente = len([p for p in patients.values() if p.get("statut") == "salle_attente"])
-        nb_rouge = len([p for p in patients.values()
-                       if p.get("gravite") == "ROUGE" and p.get("statut") != "sorti"])
-        nb_jaune = len([p for p in patients.values()
-                       if p.get("gravite") == "JAUNE" and p.get("statut") != "sorti"])
-        nb_vert = len([p for p in patients.values()
-                      if p.get("gravite") == "VERT" and p.get("statut") != "sorti"])
+        nb_attente = len(
+            [p for p in patients.values() if p.get("statut") == "salle_attente"]
+        )
+        nb_rouge = len(
+            [
+                p
+                for p in patients.values()
+                if p.get("gravite") == "ROUGE" and p.get("statut") != "sorti"
+            ]
+        )
+        nb_jaune = len(
+            [
+                p
+                for p in patients.values()
+                if p.get("gravite") == "JAUNE" and p.get("statut") != "sorti"
+            ]
+        )
+        nb_vert = len(
+            [
+                p
+                for p in patients.values()
+                if p.get("gravite") == "VERT" and p.get("statut") != "sorti"
+            ]
+        )
 
         # Etat consultation
         consultation = etat.get("consultation", {})
@@ -246,7 +360,9 @@ class ActionExecutor:
 
         # Staff disponible
         staff = etat.get("staff", [])
-        staff_dispo = len([s for s in staff if s.get("disponible") and not s.get("en_transport")])
+        staff_dispo = len(
+            [s for s in staff if s.get("disponible") and not s.get("en_transport")]
+        )
 
         return {
             "success": True,
@@ -258,12 +374,12 @@ class ActionExecutor:
                 "vert": nb_vert,
                 "consultation_libre": consultation_libre,
                 "staff_disponible": staff_dispo,
-                "heure_simulation": etat.get("current_time", "")
+                "heure_simulation": etat.get("current_time", ""),
             },
             "queues": {
                 "consultation": len(etat.get("queue_consultation", [])),
-                "transport": len(etat.get("queue_transport", []))
-            }
+                "transport": len(etat.get("queue_transport", [])),
+            },
         }
 
     def _list_patients(self) -> Dict[str, Any]:
@@ -274,20 +390,18 @@ class ActionExecutor:
         patients_list = []
         for pid, p in patients.items():
             if p.get("statut") != "sorti":
-                patients_list.append({
-                    "id": pid,
-                    "nom": f"{p.get('prenom', '')} {p.get('nom', '')}",
-                    "gravite": p.get("gravite"),
-                    "statut": p.get("statut"),
-                    "salle": p.get("salle_attente_id", "N/A")
-                })
+                patients_list.append(
+                    {
+                        "id": pid,
+                        "nom": f"{p.get('prenom', '')} {p.get('nom', '')}",
+                        "gravite": p.get("gravite"),
+                        "statut": p.get("statut"),
+                        "salle": p.get("salle_attente_id", "N/A"),
+                    }
+                )
 
         # Trier par gravite (ROUGE en premier)
         ordre_gravite = {"ROUGE": 0, "JAUNE": 1, "VERT": 2, "GRIS": 3}
         patients_list.sort(key=lambda x: ordre_gravite.get(x["gravite"], 4))
 
-        return {
-            "success": True,
-            "count": len(patients_list),
-            "patients": patients_list
-        }
+        return {"success": True, "count": len(patients_list), "patients": patients_list}

@@ -31,6 +31,7 @@ logger = logging.getLogger("ChatbotEngine")
 @dataclass
 class ChatbotResponse:
     """Reponse complete du chatbot."""
+
     message: str
     guardrail_status: str  # "allowed" | "blocked" | "warning"
     guardrail_details: Optional[str] = None
@@ -66,7 +67,7 @@ class ChatbotEngine:
         controller,
         state,
         mistral_api_key: Optional[str] = None,
-        decision_history_ref: Optional[List] = None
+        decision_history_ref: Optional[List] = None,
     ):
         """
         Initialise le chatbot.
@@ -78,7 +79,7 @@ class ChatbotEngine:
             decision_history_ref: Reference vers l'historique des decisions
         """
         # Charger les variables d'environnement
-        env_path = PROJECT_ROOT / '.env'
+        env_path = PROJECT_ROOT / ".env"
         if env_path.exists():
             load_dotenv(dotenv_path=env_path)
 
@@ -90,6 +91,7 @@ class ChatbotEngine:
         if self.api_key:
             try:
                 from mistralai import Mistral
+
                 self.mistral_client = Mistral(api_key=self.api_key)
                 logger.info("Client Mistral initialise")
             except Exception as e:
@@ -106,7 +108,9 @@ class ChatbotEngine:
         # Composants
         self.intent_parser = IntentParser(self.mistral_client)
         self.action_executor = ActionExecutor(controller, state)
-        self.response_builder = ResponseBuilder(self.mistral_client)  # Passer Mistral pour réponses naturelles
+        self.response_builder = ResponseBuilder(
+            self.mistral_client
+        )  # Passer Mistral pour réponses naturelles
 
         # References partagees
         self.controller = controller
@@ -142,7 +146,7 @@ class ChatbotEngine:
             return ChatbotResponse(
                 message="Veuillez entrer un message.",
                 guardrail_status="allowed",
-                latency_ms=0.0
+                latency_ms=0.0,
             )
 
         # Etape 1: Validation via guardrails RAG (récupération initiale)
@@ -156,21 +160,23 @@ class ChatbotEngine:
                 message="⚠️ Votre requete a ete bloquee par le systeme de securite.",
                 guardrail_status="blocked",
                 guardrail_details=rag_response.status,
-                latency_ms=latency
+                latency_ms=latency,
             )
 
         # Etape 2: Parser l'intention
         intent = self.intent_parser.parse(user_message)
-        logger.info(f"Intent detecte: {intent.intent_type.value} (conf: {intent.confidence:.2f})")
+        logger.info(
+            f"Intent detecte: {intent.intent_type.value} (conf: {intent.confidence:.2f})"
+        )
 
         # --- FIX BUG 1.2 : FILTRAGE DU CONTEXTE (ISOLATION) ---
-        # Si l'intention est purement administrative ou inconnue, on vide rag_response 
+        # Si l'intention est purement administrative ou inconnue, on vide rag_response
         # pour éviter que le LLM n'hallucine un lien avec un protocole précédent.
         if intent.intent_type in [
-            IntentType.LIST_PATIENTS, 
-            IntentType.GET_STATUS, 
+            IntentType.LIST_PATIENTS,
+            IntentType.GET_STATUS,
             IntentType.EXPLAIN_DECISION,
-            IntentType.UNKNOWN
+            IntentType.UNKNOWN,
         ]:
             # On garde l'objet pour le statut de sécurité mais on invalide le protocole
             if rag_response:
@@ -192,7 +198,7 @@ class ChatbotEngine:
             rag_response=rag_response,
             action_results=action_results,
             user_message=user_message,
-            decision_history=self.decision_history
+            decision_history=self.decision_history,
         )
 
         # Mettre a jour l'historique de conversation
@@ -208,7 +214,7 @@ class ChatbotEngine:
             rag_context=response_data.get("rag_context"),
             actions_executed=response_data.get("actions_executed"),
             latency_ms=latency,
-            intent_type=response_data.get("intent_type", "unknown")
+            intent_type=response_data.get("intent_type", "unknown"),
         )
 
     def _validate_and_query_rag(self, query: str):
@@ -231,14 +237,8 @@ class ChatbotEngine:
 
     def _update_history(self, user_msg: str, bot_msg: str) -> None:
         """Maintient l'historique de conversation."""
-        self.conversation_history.append({
-            "role": "user",
-            "content": user_msg
-        })
-        self.conversation_history.append({
-            "role": "assistant",
-            "content": bot_msg
-        })
+        self.conversation_history.append({"role": "user", "content": user_msg})
+        self.conversation_history.append({"role": "assistant", "content": bot_msg})
 
         # Garder les 20 derniers messages (10 echanges)
         if len(self.conversation_history) > 20:

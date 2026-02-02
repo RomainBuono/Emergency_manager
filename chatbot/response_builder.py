@@ -24,7 +24,7 @@ class ResponseBuilder:
     def __init__(self, mistral_client=None):
         """
         Initialise le ResponseBuilder.
-        
+
         Args:
             mistral_client: Client Mistral optionnel pour génération de réponses naturelles
         """
@@ -36,7 +36,7 @@ class ResponseBuilder:
         rag_response,
         action_results: List[Dict[str, Any]],
         user_message: str,
-        decision_history: List[Dict] = None
+        decision_history: List[Dict] = None,
     ) -> Dict[str, Any]:
         """
         Construit la reponse complete basee sur le type d'intention.
@@ -63,9 +63,13 @@ class ResponseBuilder:
         elif intent.intent_type == IntentType.EXPLAIN_DECISION:
             message = self._build_explanation_response(decision_history, user_message)
         elif intent.intent_type == IntentType.TRANSPORT_CONSULTATION:
-            message = self._build_transport_response(action_results, "consultation", user_message)
+            message = self._build_transport_response(
+                action_results, "consultation", user_message
+            )
         elif intent.intent_type == IntentType.TRANSPORT_UNITE:
-            message = self._build_transport_response(action_results, "unite", user_message)
+            message = self._build_transport_response(
+                action_results, "unite", user_message
+            )
         elif intent.intent_type == IntentType.UNKNOWN:
             message = self._build_conversational_response(user_message, rag_response)
         else:
@@ -73,22 +77,22 @@ class ResponseBuilder:
 
         # Construire le contexte RAG si disponible
         rag_context = None
-        if rag_response and hasattr(rag_response, 'protocol') and rag_response.protocol:
+        if rag_response and hasattr(rag_response, "protocol") and rag_response.protocol:
             rag_context = {
                 "protocol": {
                     "pathologie": rag_response.protocol.pathologie,
                     "gravite": rag_response.protocol.gravite,
-                    "unite_cible": rag_response.protocol.unite_cible
+                    "unite_cible": rag_response.protocol.unite_cible,
                 },
                 "rules": [r.titre for r in (rag_response.applicable_rules or [])],
-                "relevance_score": rag_response.relevance_score
+                "relevance_score": rag_response.relevance_score,
             }
 
         return {
             "message": message,
             "rag_context": rag_context,
             "actions_executed": action_results,
-            "intent_type": intent.intent_type.value
+            "intent_type": intent.intent_type.value,
         }
 
     def _generate_natural_response(self, prompt: str, context: str = "") -> str:
@@ -122,29 +126,31 @@ Réponds toujours en français."""
                 model="ministral-8b-latest",
                 messages=[
                     {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": full_prompt}
+                    {"role": "user", "content": full_prompt},
                 ],
                 max_tokens=500,
-                temperature=0.7
+                temperature=0.7,
             )
 
             latency_ms = (time.perf_counter() - start_time) * 1000
 
             # Enregistrer les métriques du chatbot
-            if hasattr(response, 'usage') and response.usage:
+            if hasattr(response, "usage") and response.usage:
                 monitor.log_metrics_simple(
                     input_tokens=response.usage.prompt_tokens,
                     output_tokens=response.usage.completion_tokens,
                     latency_ms=latency_ms,
                     model_name="ministral-8b-latest",
-                    source="chatbot"
+                    source="chatbot",
                 )
 
             return response.choices[0].message.content.strip()
         except Exception as e:
             return None
 
-    def _build_add_patient_response(self, results: List[Dict[str, Any]], user_message: str) -> str:
+    def _build_add_patient_response(
+        self, results: List[Dict[str, Any]], user_message: str
+    ) -> str:
         """Construit la reponse pour l'ajout de patients."""
         if not results:
             return "Je n'ai pas pu effectuer l'ajout de patients. Veuillez réessayer ou vérifier les paramètres de votre demande."
@@ -160,12 +166,14 @@ Réponds toujours en français."""
                 added = result_data.get("patients", [])
                 total_added += len(added)
                 for p in added:
-                    patients_info.append({
-                        "id": p['patient_id'],
-                        "nom": p['nom'],
-                        "gravite": p['gravite'],
-                        "salle": p['salle']
-                    })
+                    patients_info.append(
+                        {
+                            "id": p["patient_id"],
+                            "nom": p["nom"],
+                            "gravite": p["gravite"],
+                            "salle": p["salle"],
+                        }
+                    )
                 if result_data.get("errors"):
                     errors.extend(result_data["errors"])
             else:
@@ -180,7 +188,7 @@ Réponds toujours en français."""
             context = f"Patients ajoutés: {total_added}\nDétails: {patients_info[:5]}"
             natural = self._generate_natural_response(
                 f"L'utilisateur a demandé: '{user_message}'. Confirme l'ajout de {total_added} patient(s) de manière naturelle et professionnelle. Mentionne les IDs des patients et leurs salles assignées.",
-                context
+                context,
             )
             if natural:
                 return natural
@@ -193,9 +201,11 @@ Réponds toujours en français."""
             response = f"J'ai bien enregistré {total_added} nouveaux patients dans le système.\n\nVoici le détail des admissions :\n"
             for p in patients_info[:10]:
                 response += f"• {p['nom']} (ID: {p['id']}) - Gravité {p['gravite']} → {p['salle']}\n"
-            
+
             if len(patients_info) > 10:
-                response += f"\n...ainsi que {len(patients_info) - 10} autre(s) patient(s)."
+                response += (
+                    f"\n...ainsi que {len(patients_info) - 10} autre(s) patient(s)."
+                )
 
         if errors:
             response += f"\n\nAttention : {len(errors)} erreur(s) se sont produites lors de l'enregistrement."
@@ -210,7 +220,7 @@ Réponds toujours en français."""
         if not rag_response.is_safe:
             return f"Je ne peux pas traiter cette demande car elle a été identifiée comme potentiellement problématique par notre système de sécurité. Raison : {rag_response.status}"
 
-        if not hasattr(rag_response, 'protocol') or not rag_response.protocol:
+        if not hasattr(rag_response, "protocol") or not rag_response.protocol:
             return "Je n'ai pas trouvé de protocole correspondant à votre recherche dans notre base de données. Pourriez-vous reformuler votre question ou préciser la pathologie concernée ?"
 
         p = rag_response.protocol
@@ -221,7 +231,7 @@ Réponds toujours en français."""
             context = f"Protocole trouvé:\n- Pathologie: {p.pathologie}\n- Gravité: {p.gravite}\n- Unité cible: {p.unite_cible}\n- Règles: {[r.titre for r in rules[:5]]}"
             natural = self._generate_natural_response(
                 f"L'utilisateur demande: '{user_message}'. Explique le protocole médical trouvé de manière claire et professionnelle pour un personnel soignant.",
-                context
+                context,
             )
             if natural:
                 return natural
@@ -240,7 +250,9 @@ Réponds toujours en français."""
 
         return response
 
-    def _build_status_response(self, results: List[Dict[str, Any]], user_message: str) -> str:
+    def _build_status_response(
+        self, results: List[Dict[str, Any]], user_message: str
+    ) -> str:
         """Construit la reponse pour l'etat du systeme."""
         if not results or not results[0].get("success"):
             return "Je rencontre des difficultés pour récupérer l'état actuel du système. Veuillez patienter quelques instants et réessayer."
@@ -249,31 +261,33 @@ Réponds toujours en français."""
         summary = result.get("summary", {})
         queues = result.get("queues", {})
 
-        total = summary.get('total_patients', 0)
-        attente = summary.get('en_attente', 0)
-        rouge = summary.get('rouge', 0)
-        jaune = summary.get('jaune', 0)
-        vert = summary.get('vert', 0)
-        consultation_libre = summary.get('consultation_libre', False)
-        staff_dispo = summary.get('staff_disponible', 0)
-        queue_consult = queues.get('consultation', 0)
-        queue_transport = queues.get('transport', 0)
-        heure = summary.get('heure_simulation', 'N/A')
+        total = summary.get("total_patients", 0)
+        attente = summary.get("en_attente", 0)
+        rouge = summary.get("rouge", 0)
+        jaune = summary.get("jaune", 0)
+        vert = summary.get("vert", 0)
+        consultation_libre = summary.get("consultation_libre", False)
+        staff_dispo = summary.get("staff_disponible", 0)
+        queue_consult = queues.get("consultation", 0)
+        queue_transport = queues.get("transport", 0)
+        heure = summary.get("heure_simulation", "N/A")
 
         # Générer une réponse naturelle si Mistral disponible
         if self.mistral_client:
             context = f"Total patients: {total}, En attente: {attente}, Rouge: {rouge}, Jaune: {jaune}, Vert: {vert}, Consultation libre: {consultation_libre}, Staff dispo: {staff_dispo}"
             natural = self._generate_natural_response(
                 f"L'utilisateur demande: '{user_message}'. Fais un résumé clair et professionnel de l'état du service d'urgences.",
-                context
+                context,
             )
             if natural:
                 return natural
 
         # Réponse par défaut améliorée
         response = f"Voici l'état actuel du service des urgences (à {heure}).\n\n"
-        
-        response += f"Nous avons actuellement {total} patient(s) actif(s) dans le service"
+
+        response += (
+            f"Nous avons actuellement {total} patient(s) actif(s) dans le service"
+        )
         if attente > 0:
             response += f", dont {attente} en salle d'attente"
         response += ".\n\n"
@@ -285,19 +299,23 @@ Réponds toujours en français."""
             response += f"• {jaune} patient(s) en urgence relative (jaune)\n"
         if vert > 0:
             response += f"• {vert} patient(s) en consultation simple (vert)\n"
-        
+
         if rouge == 0 and jaune == 0 and vert == 0:
             response += "• Aucun patient actuellement\n"
 
         response += f"\nLa salle de consultation est {'disponible' if consultation_libre else 'actuellement occupée'}. "
-        response += f"Nous disposons de {staff_dispo} membre(s) du personnel disponible(s).\n"
+        response += (
+            f"Nous disposons de {staff_dispo} membre(s) du personnel disponible(s).\n"
+        )
 
         if queue_consult > 0 or queue_transport > 0:
             response += f"\nFiles d'attente : {queue_consult} patient(s) pour consultation, {queue_transport} en attente de transport."
 
         return response
 
-    def _build_list_patients_response(self, results: List[Dict[str, Any]], user_message: str) -> str:
+    def _build_list_patients_response(
+        self, results: List[Dict[str, Any]], user_message: str
+    ) -> str:
         """Construit la reponse pour la liste des patients."""
         if not results or not results[0].get("success"):
             return "Je n'ai pas pu récupérer la liste des patients. Veuillez réessayer dans quelques instants."
@@ -311,9 +329,9 @@ Réponds toujours en français."""
 
         gravite_label = {
             "ROUGE": "urgence vitale",
-            "JAUNE": "urgence relative", 
+            "JAUNE": "urgence relative",
             "VERT": "consultation simple",
-            "GRIS": "en observation"
+            "GRIS": "en observation",
         }
 
         # Générer une réponse naturelle si Mistral disponible
@@ -321,13 +339,15 @@ Réponds toujours en français."""
             context = f"Nombre de patients: {count}\nListe: {patients[:10]}"
             natural = self._generate_natural_response(
                 f"L'utilisateur demande: '{user_message}'. Présente la liste des patients de manière claire et organisée.",
-                context
+                context,
             )
             if natural:
                 return natural
 
         # Réponse par défaut améliorée
-        response = f"Voici la liste des {count} patient(s) actuellement pris en charge :\n\n"
+        response = (
+            f"Voici la liste des {count} patient(s) actuellement pris en charge :\n\n"
+        )
 
         for p in patients[:15]:
             gravite = p.get("gravite", "")
@@ -340,7 +360,9 @@ Réponds toujours en français."""
 
         return response
 
-    def _build_explanation_response(self, decision_history: List[Dict] = None, user_message: str = "") -> str:
+    def _build_explanation_response(
+        self, decision_history: List[Dict] = None, user_message: str = ""
+    ) -> str:
         """Construit la reponse pour expliquer les decisions de l'agent."""
         if not decision_history or len(decision_history) == 0:
             return "L'agent autonome n'a pas encore pris de décision. Dès qu'il effectuera une action, je pourrai vous expliquer son raisonnement."
@@ -360,7 +382,7 @@ Réponds toujours en français."""
             context = f"Timestamp: {timestamp}\nRaisonnement: {raisonnement}\nActions: {actions[:5]}"
             natural = self._generate_natural_response(
                 f"L'utilisateur demande: '{user_message}'. Explique la dernière décision de l'agent de manière pédagogique.",
-                context
+                context,
             )
             if natural:
                 return natural
@@ -382,7 +404,9 @@ Réponds toujours en français."""
                 else:
                     response += f"{i}. {action}\n"
         else:
-            response += "Aucune action spécifique n'a été enregistrée pour cette décision."
+            response += (
+                "Aucune action spécifique n'a été enregistrée pour cette décision."
+            )
 
         if len(decision_history) > 1:
             response += f"\n\nL'agent a pris {len(decision_history)} décision(s) au total depuis le début de la session."
@@ -390,10 +414,7 @@ Réponds toujours en français."""
         return response
 
     def _build_transport_response(
-        self,
-        results: List[Dict[str, Any]],
-        destination: str,
-        user_message: str
+        self, results: List[Dict[str, Any]], destination: str, user_message: str
     ) -> str:
         """Construit la reponse pour les transports."""
         if not results:
@@ -408,13 +429,15 @@ Réponds toujours en français."""
                 return f"Je ne peux pas effectuer ce transport pour le moment car aucun personnel n'est disponible. Veuillez réessayer dans quelques minutes."
             return f"Le transport n'a pas pu être initié. Raison : {error}"
 
-    def _build_conversational_response(self, user_message: str, rag_response=None) -> str:
+    def _build_conversational_response(
+        self, user_message: str, rag_response=None
+    ) -> str:
         """
         Construit une réponse conversationnelle pour les messages non reconnus.
         Utilise Mistral si disponible, sinon retourne une aide contextuelle.
         """
         user_lower = user_message.lower().strip()
-        
+
         # Gérer les salutations
         greetings = ["bonjour", "salut", "hello", "hi", "coucou", "bonsoir"]
         if any(g in user_lower for g in greetings):
@@ -427,24 +450,46 @@ Réponds toujours en français."""
             return "Bonjour ! Je suis l'assistant du service des urgences. Je peux vous aider à gérer les patients, consulter les protocoles médicaux et suivre l'état du service. Comment puis-je vous aider ?"
 
         # Gérer les remerciements
-        thanks = ["merci", "thank", "parfait", "super", "génial", "excellent", "Parfait"]
+        thanks = [
+            "merci",
+            "thank",
+            "parfait",
+            "super",
+            "génial",
+            "excellent",
+            "Parfait",
+        ]
         if any(t in user_lower for t in thanks):
             return "Je vous en prie ! N'hésitez pas si vous avez d'autres questions ou besoin d'aide."
 
         # Gérer les questions sur les capacités
-        capabilities = ["que peux-tu", "que sais-tu", "aide", "help", "quoi faire", "comment", "fonctionn", "qu'es ce que", "Pourquoi"]
+        capabilities = [
+            "que peux-tu",
+            "que sais-tu",
+            "aide",
+            "help",
+            "quoi faire",
+            "comment",
+            "fonctionn",
+            "qu'es ce que",
+            "Pourquoi",
+        ]
         if any(c in user_lower for c in capabilities):
             return self._build_help_response()
 
         # Utiliser Mistral pour une réponse contextuelle si disponible
         if self.mistral_client:
             context = ""
-            if rag_response and hasattr(rag_response, 'protocol') and rag_response.protocol:
+            if (
+                rag_response
+                and hasattr(rag_response, "protocol")
+                and rag_response.protocol
+            ):
                 context = f"Protocole trouvé: {rag_response.protocol.pathologie}"
-            
+
             natural = self._generate_natural_response(
                 f"L'utilisateur a dit: '{user_message}'. Tu es un assistant pour un service d'urgences hospitalières. Si tu ne comprends pas la demande, propose gentiment de l'aide et donne des exemples de ce que tu peux faire (gérer patients, protocoles, état du service).",
-                context
+                context,
             )
             if natural:
                 return natural
@@ -491,19 +536,16 @@ Comment puis-je vous aider ?"""
 N'hésitez pas à me poser vos questions en langage naturel !"""
 
     def _build_generic_response(
-        self,
-        intent: ParsedIntent,
-        rag_response,
-        user_message: str
+        self, intent: ParsedIntent, rag_response, user_message: str
     ) -> str:
         """Construit une reponse generique."""
         if self.mistral_client:
             context = f"Intention détectée: {intent.intent_type.value}\nEntités: {intent.entities}"
             natural = self._generate_natural_response(
                 f"L'utilisateur a demandé: '{user_message}'. L'intention détectée est {intent.intent_type.value}. Confirme que tu traites la demande et donne une indication de ce qui va se passer.",
-                context
+                context,
             )
             if natural:
                 return natural
-        
+
         return f"J'ai bien reçu votre demande. Je la traite comme une action de type « {intent.intent_type.value} ». Veuillez patienter..."
