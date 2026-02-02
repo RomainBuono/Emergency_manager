@@ -1,0 +1,432 @@
+[
+  {
+    "id": "regle_priorite_rouge",
+    "type": "priorite",
+    "titre": "Priorité Absolue ROUGE",
+    "gravite": "ROUGE",
+    "regle": "ROUGE a TOUJOURS priorité absolue (vital + urgent)",
+    "conditions": [
+      "Prioritaire sur JAUNE, VERT et GRIS",
+      "Jamais préempté par un autre niveau",
+      "Transfert immédiat vers unité ou soins critiques"
+    ],
+    "ordre_traitement": 1,
+    "texte_complet": "Les patients ROUGE ont une priorité absolue et vitale. Ils sont TOUJOURS traités en premier, quel que soit le temps d'attente des autres niveaux. Consultation médicale de 1 à 5 minutes puis transfert immédiat vers soins critiques ou unité spécialisée selon pathologie."
+  },
+  {
+    "id": "regle_priorite_jaune",
+    "type": "priorite",
+    "titre": "Priorité JAUNE",
+    "gravite": "JAUNE",
+    "regle": "JAUNE prioritaire sur VERT et GRIS normalement",
+    "conditions": [
+      "Prioritaire sur VERT (sauf exception 360min)",
+      "Prioritaire sur GRIS",
+      "Peut être préempté par ROUGE"
+    ],
+    "ordre_traitement": 2,
+    "exception": "Si VERT attend >360min, VERT passe avant JAUNE",
+    "texte_complet": "Les patients JAUNE sont prioritaires sur VERT et GRIS en situation normale. Exception: si un patient VERT attend plus de 360 minutes (6 heures), il passe avant les JAUNE. Consultation médicale de 20 à 40 minutes."
+  },
+  {
+    "id": "regle_priorite_vert",
+    "type": "priorite",
+    "titre": "Priorité VERT",
+    "gravite": "VERT",
+    "regle": "VERT prioritaire sur GRIS normalement",
+    "conditions": [
+      "Prioritaire sur GRIS",
+      "Peut être préempté par ROUGE et JAUNE (sauf exception)"
+    ],
+    "ordre_traitement": 3,
+    "exception": "Si VERT attend >360min: passe AVANT JAUNE mais JAMAIS avant ROUGE",
+    "texte_complet": "Les patients VERT sont prioritaires sur GRIS. Si un patient VERT attend plus de 360 minutes (6 heures), il bénéficie d'une priorité exceptionnelle et passe avant les JAUNE, mais reste toujours après les ROUGE. Consultation médicale de 10 à 25 minutes."
+  },
+  {
+    "id": "regle_priorite_gris",
+    "type": "priorite",
+    "titre": "Priorité GRIS",
+    "gravite": "GRIS",
+    "regle": "GRIS a la dernière priorité",
+    "conditions": [
+      "Dernière priorité",
+      "Traité après tous les autres niveaux",
+      "Orientation retour domicile"
+    ],
+    "ordre_traitement": 4,
+    "texte_complet": "Les patients GRIS ont la plus faible priorité. Ils sont traités en dernier, après ROUGE, JAUNE et VERT. Consultation médicale de 5 à 15 minutes puis retour à la maison. Ces cas ne justifient généralement pas une urgence hospitalière."
+  },
+  {
+    "id": "regle_exception_360min",
+    "type": "exception",
+    "titre": "Exception Temps d'Attente 360 Minutes",
+    "regle": "VERT >360min passe avant JAUNE mais jamais avant ROUGE",
+    "declencheur": "Patient VERT attend >360 minutes",
+    "conditions": [
+      "VERT >360min monte en priorité",
+      "Passe AVANT tous les JAUNE",
+      "Reste APRÈS tous les ROUGE"
+    ],
+    "ordre_exceptionnel": [
+      "1. Tous les ROUGE (par ordre arrivée)",
+      "2. VERT qui attendent >360min",
+      "3. Tous les JAUNE (par ordre arrivée)",
+      "4. VERT <360min (par ordre arrivée)",
+      "5. Tous les GRIS (par ordre arrivée)"
+    ],
+    "texte_complet": "Exception importante: si un patient VERT attend plus de 6 heures (360 minutes), il bénéficie d'une priorité exceptionnelle et passe avant les patients JAUNE pour éviter une attente excessive. Cependant, les patients ROUGE conservent toujours la priorité absolue, même sur les VERT en attente prolongée."
+  },
+  {
+    "id": "regle_fifo_meme_gravite",
+    "type": "allocation",
+    "titre": "FIFO au Sein d'une Même Gravité",
+    "regle": "À gravité égale, premier arrivé = premier servi",
+    "implementation": "Tri par (gravité, heure_arrivée)",
+    "texte_complet": "Au sein d'une même catégorie de gravité, le principe FIFO (First In First Out) s'applique: le patient arrivé en premier est traité en premier. Cela garantit l'équité temporelle à niveau de risque constant."
+  },
+  {
+    "id": "regle_docteur_unique",
+    "type": "ressource",
+    "titre": "Configuration Docteur Unique",
+    "nombre": 1,
+    "localisation": "Salle de consultation (fixe)",
+    "capacite": "1 patient à la fois",
+    "duree_consultation": {
+      "GRIS": "5 à 15 minutes (aléatoire)",
+      "VERT": "10 à 25 minutes (aléatoire)",
+      "JAUNE": "20 à 40 minutes (aléatoire)",
+      "ROUGE": "1 à 5 minutes puis transfert immédiat (aléatoire)"
+    },
+    "texte_complet": "L'établissement dispose d'un seul médecin qui reste en consultation. La durée de consultation varie selon la gravité: ROUGE 1-5min (transfert immédiat prioritaire), JAUNE 20-40min, VERT 10-25min, GRIS 5-15min. Les durées sont aléatoires dans ces fourchettes."
+  },
+  {
+    "id": "regle_infirmiere_receptionniste",
+    "type": "staff",
+    "titre": "Infirmière A - Réceptionniste Fixe",
+    "nom": "Infirmière A",
+    "localisation": "Triage / entre salles d'attente (FIXE)",
+    "role": [
+      "Accueillir patients",
+      "Évaluer gravité (triage)",
+      "Assigner aux salles d'attente"
+    ],
+    "contrainte": "NE BOUGE JAMAIS de son poste",
+    "texte_complet": "L'infirmière A est positionnée au triage de manière fixe. Elle accueille tous les patients arrivants, évalue leur gravité selon les symptômes, et les oriente vers la salle d'attente appropriée. Elle ne quitte jamais son poste de triage."
+  },
+  {
+    "id": "regle_infirmieres_mobiles",
+    "type": "staff",
+    "titre": "Infirmières B et C - Mobiles",
+    "nombre": 2,
+    "noms": ["Infirmière B", "Infirmière C"],
+    "localisation": "Circulation entre salles d'attente et consultation",
+    "role": [
+      "Surveiller les salles d'attente",
+      "Transporter patients vers consultation"
+    ],
+    "temps_transport": "5 minutes",
+    "contrainte_critique": "Ne peuvent PAS laisser salle d'attente >15min sans surveillance",
+    "texte_complet": "Les infirmières B et C circulent entre les salles d'attente et la consultation. Elles surveillent les patients en attente et assurent leur transport vers la consultation (trajet de 5 minutes). Contrainte majeure: aucune salle d'attente ne peut rester plus de 15 minutes sans surveillance par une infirmière."
+  },
+  {
+    "id": "regle_aide_soignants",
+    "type": "staff",
+    "titre": "2 Aide-Soignants Polyvalents",
+    "nombre": 2,
+    "noms": ["Aide-soignant 1", "Aide-soignant 2"],
+    "role": [
+      "Surveiller salles d'attente (si infirmière indisponible)",
+      "Transport consultation ↔ salle attente (5min)",
+      "Transport consultation → unité cible (45min)"
+    ],
+    "contraintes": [
+      "Ne peuvent PAS laisser salle >15min sans surveillance (si aucune infirmière disponible)",
+      "Ne peuvent PAS être absents >60min des salles d'attente"
+    ],
+    "temps_transport": {
+      "consultation_salle": "5 minutes",
+      "consultation_unite": "45 minutes"
+    },
+    "texte_complet": "Les 2 aide-soignants assurent plusieurs fonctions: surveillance des salles d'attente en relais des infirmières, transport des patients vers la consultation (5min), et transport vers les unités cibles après consultation (45min). Ils ne peuvent pas être absents plus de 60 minutes des salles d'attente et doivent assurer une surveillance <15min si aucune infirmière n'est disponible."
+  },
+  {
+    "id": "regle_surveillance_15min",
+    "type": "contrainte",
+    "titre": "Contrainte Surveillance 15 Minutes",
+    "regle": "Aucune salle d'attente ne doit rester >15min sans personnel",
+    "personnel_concerne": ["Infirmières mobiles", "Aide-soignants"],
+    "justification": "Sécurité patients, détection aggravation, réassurance",
+    "texte_complet": "Contrainte de sécurité majeure: aucune salle d'attente ne peut rester plus de 15 minutes sans la présence d'un personnel soignant (infirmière mobile ou aide-soignant). Cela permet de détecter rapidement toute aggravation et d'assurer la sécurité des patients en attente."
+  },
+  {
+    "id": "regle_absence_max_60min",
+    "type": "contrainte",
+    "titre": "Absence Maximum 60 Minutes Aide-Soignants",
+    "regle": "Aide-soignants ne peuvent être absents >60min des salles d'attente",
+    "personnel_concerne": ["Aide-soignants"],
+    "justification": "Maintien surveillance, disponibilité transport",
+    "texte_complet": "Les aide-soignants ne peuvent pas être absents plus de 60 minutes des salles d'attente. Cette règle garantit qu'ils restent disponibles pour la surveillance et le transport des patients, même lors de transferts vers les unités (45min de trajet)."
+  },
+  {
+    "id": "regle_salle_attente_1",
+    "type": "ressource",
+    "titre": "Salle d'Attente 1",
+    "nom": "Salle attente 1",
+    "capacite": 5,
+    "places": 5,
+    "texte_complet": "La salle d'attente 1 dispose de 5 places. Une fois pleine, les nouveaux patients doivent être orientés vers une autre salle d'attente disponible."
+  },
+  {
+    "id": "regle_salle_attente_2",
+    "type": "ressource",
+    "titre": "Salle d'Attente 2",
+    "nom": "Salle attente 2",
+    "capacite": 10,
+    "places": 10,
+    "texte_complet": "La salle d'attente 2 dispose de 10 places. C'est la salle avec la plus grande capacité d'accueil."
+  },
+  {
+    "id": "regle_salle_attente_3",
+    "type": "ressource",
+    "titre": "Salle d'Attente 3",
+    "nom": "Salle attente 3",
+    "capacite": 5,
+    "places": 5,
+    "texte_complet": "La salle d'attente 3 dispose de 5 places. Une fois pleine, les nouveaux patients doivent être orientés vers une autre salle d'attente disponible."
+  },
+  {
+    "id": "regle_consultation_unique",
+    "type": "ressource",
+    "titre": "Salle de Consultation Unique",
+    "nom": "Consultation",
+    "capacite": 1,
+    "places": 1,
+    "occupation": "1 patient à la fois avec le médecin",
+    "texte_complet": "Il n'existe qu'une seule salle de consultation où le médecin reçoit les patients un par un. Capacité: 1 patient à la fois. Les autres patients attendent dans les salles d'attente selon leur priorité."
+  },
+  {
+    "id": "regle_consultation_obligatoire",
+    "type": "contrainte",
+    "titre": "Consultation Médicale Obligatoire Avant Transfert",
+    "regle": "Un patient doit avoir vu un médecin avant d'être transféré",
+    "exception": "Aucune",
+    "texte_complet": "Règle fondamentale: tout patient doit obligatoirement être examiné par le médecin en consultation avant d'être transféré vers une unité cible ou renvoyé à domicile. Aucune exception n'est autorisée."
+  },
+  {
+    "id": "regle_validation_unite",
+    "type": "contrainte",
+    "titre": "Validation Disponibilité Unité Cible",
+    "regle": "L'unité qui reçoit doit valider si elle a de la place",
+    "gestion": "Gestion du nombre de places disponibles par unité",
+    "texte_complet": "Avant de transférer un patient vers une unité cible (Cardiologie, Neurologie, etc.), l'unité doit confirmer qu'elle dispose d'une place disponible. Le système doit gérer le nombre de places par unité et vérifier la disponibilité avant tout transfert."
+  },
+  {
+    "id": "regle_unite_cardiologie",
+    "type": "unite_cible",
+    "titre": "Unité de Cardiologie",
+    "nom": "Cardiologie",
+    "code": "CARDIO",
+    "pathologies": ["Syndrome coronarien aigu", "Fibrillation atriale", "Décompensation cardiaque", "Douleur thoracique"],
+    "validation_requise": true,
+    "texte_complet": "L'unité de Cardiologie prend en charge les pathologies cardiaques: syndrome coronarien aigu, troubles du rythme, décompensations cardiaques. Validation de disponibilité obligatoire avant transfert."
+  },
+  {
+    "id": "regle_unite_pneumologie",
+    "type": "unite_cible",
+    "titre": "Unité de Pneumologie",
+    "nom": "Pneumologie",
+    "code": "PNEUMO",
+    "pathologies": ["Pneumothorax", "Asthme sévère", "Détresse respiratoire (si stable)"],
+    "validation_requise": true,
+    "texte_complet": "L'unité de Pneumologie prend en charge les pathologies respiratoires: pneumothorax, asthme sévère, détresses respiratoires stabilisées. Validation de disponibilité obligatoire avant transfert."
+  },
+  {
+    "id": "regle_unite_neurologie",
+    "type": "unite_cible",
+    "titre": "Unité de Neurologie",
+    "nom": "Neurologie",
+    "code": "NEURO",
+    "pathologies": ["AVC", "Convulsions", "Coma", "Déficit neurologique"],
+    "validation_requise": true,
+    "texte_complet": "L'unité de Neurologie prend en charge les pathologies neurologiques: AVC, états de mal convulsif, comas, déficits neurologiques. Validation de disponibilité obligatoire avant transfert."
+  },
+  {
+    "id": "regle_unite_orthopedie",
+    "type": "unite_cible",
+    "titre": "Unité d'Orthopédie",
+    "nom": "Orthopédie",
+    "code": "ORTHO",
+    "pathologies": ["Fracture ouverte", "Luxation", "Entorse grave", "Traumatismes ostéo-articulaires"],
+    "validation_requise": true,
+    "texte_complet": "L'unité d'Orthopédie prend en charge les traumatismes ostéo-articulaires: fractures ouvertes, luxations, entorses graves. Validation de disponibilité obligatoire avant transfert."
+  },
+  {
+    "id": "regle_unite_soins_critiques",
+    "type": "unite_cible",
+    "titre": "Unité de Soins Critiques",
+    "nom": "Soins Critiques",
+    "code": "SOINS_CRITIQUES",
+    "pathologies": ["Détresse respiratoire", "Choc", "Polytraumatisme", "Brûlure grave", "Hémorragie sévère"],
+    "gravite": "ROUGE prioritaire",
+    "validation_requise": true,
+    "texte_complet": "L'unité de Soins Critiques prend en charge les urgences vitales nécessitant surveillance intensive: détresses respiratoires, états de choc, polytraumatismes, brûlures graves. Priorité aux patients ROUGE. Validation de disponibilité obligatoire avant transfert."
+  },
+  {
+    "id": "regle_unite_maison",
+    "type": "unite_cible",
+    "titre": "Retour à Domicile (Maison)",
+    "nom": "Maison",
+    "code": "HOME",
+    "pathologies": ["Pathologies bénignes VERT", "Cas GRIS", "Consultations non urgentes"],
+    "validation_requise": false,
+    "note": "Principalement pour VERT et GRIS",
+    "texte_complet": "Le retour à domicile (Maison) concerne les patients VERT avec pathologies bénignes et tous les patients GRIS dont la situation ne justifie pas d'hospitalisation. Pas de validation d'unité requise pour cette orientation."
+  },
+  {
+    "id": "regle_dispatch_rouge",
+    "type": "allocation",
+    "titre": "Dispatching Patients ROUGE",
+    "regle": "ROUGE: Soins critiques immédiatement OU dispatching selon pathologie",
+    "conditions": [
+      "Si détresse vitale non spécifique → Soins Critiques",
+      "Si pathologie spécifique identifiée → Unité spécialisée"
+    ],
+    "exemples": [
+      "AVC → Neurologie",
+      "Infarctus / SCA → Cardiologie",
+      "Détresse respiratoire → Pneumologie ou Soins Critiques",
+      "Polytraumatisme → Soins Critiques",
+      "Choc → Soins Critiques"
+    ],
+    "texte_complet": "Les patients ROUGE sont transférés immédiatement après consultation (1-5min). Si la pathologie est identifiée et spécifique (AVC, infarctus), orientation vers l'unité spécialisée appropriée. Si détresse vitale non spécifique ou multi-organe, transfert vers Soins Critiques."
+  },
+  {
+    "id": "regle_retour_gris",
+    "type": "allocation",
+    "titre": "Retour Domicile Systématique GRIS",
+    "regle": "GRIS: Retour à la maison systématique",
+    "gravite": "GRIS",
+    "justification": "Pas de nécessité d'hospitalisation",
+    "texte_complet": "Les patients GRIS sont systématiquement renvoyés à domicile après consultation. Leur situation ne justifie pas une prise en charge hospitalière et relève plutôt de la médecine de ville ou d'un suivi ambulatoire."
+  },
+  {
+    "id": "regle_temps_transport_consultation",
+    "type": "organisation",
+    "titre": "Temps de Transport vers Consultation",
+    "trajet": "Salle d'attente → Consultation",
+    "duree": 5,
+    "unite": "minutes",
+    "responsable": ["Infirmière mobile", "Aide-soignant"],
+    "texte_complet": "Le transport d'un patient depuis une salle d'attente vers la salle de consultation prend 5 minutes. Ce transport est effectué par une infirmière mobile (B ou C) ou un aide-soignant."
+  },
+  {
+    "id": "regle_temps_transport_unite",
+    "type": "organisation",
+    "titre": "Temps de Transport vers Unité Cible",
+    "trajet": "Consultation → Unité cible",
+    "duree": 45,
+    "unite": "minutes",
+    "responsable": ["Aide-soignant"],
+    "texte_complet": "Le transport d'un patient depuis la consultation vers une unité cible (Cardiologie, Neurologie, Soins Critiques, etc.) prend 45 minutes. Ce transport est exclusivement effectué par un aide-soignant."
+  },
+  {
+    "id": "regle_temps_transport_retour_attente",
+    "type": "organisation",
+    "titre": "Temps de Retour vers Salle d'Attente",
+    "trajet": "Consultation → Salle d'attente",
+    "duree": 5,
+    "unite": "minutes",
+    "responsable": ["Infirmière mobile", "Aide-soignant"],
+    "note": "Cas rare, si patient doit retourner en attente",
+    "texte_complet": "Dans les rares cas où un patient doit retourner en salle d'attente après consultation (ex: attente de résultats), le transport prend 5 minutes et est effectué par une infirmière mobile ou un aide-soignant."
+  },
+  {
+    "id": "regle_algorithme_queue",
+    "type": "algorithme",
+    "titre": "Algorithme de Gestion de la Queue",
+    "description": "Algorithme pour déterminer le prochain patient à appeler en consultation",
+    "etapes": [
+      {
+        "etape": 1,
+        "action": "Vérifier si des patients ROUGE en attente",
+        "condition": "Si ROUGE présents",
+        "resultat": "Prendre le premier ROUGE par ordre d'arrivée"
+      },
+      {
+        "etape": 2,
+        "action": "Vérifier si des VERT attendent >360min",
+        "condition": "Si VERT >360min présents et pas de ROUGE",
+        "resultat": "Prendre le premier VERT >360min par ordre d'arrivée"
+      },
+      {
+        "etape": 3,
+        "action": "Vérifier si des JAUNE en attente",
+        "condition": "Si JAUNE présents et pas de ROUGE ni VERT >360min",
+        "resultat": "Prendre le premier JAUNE par ordre d'arrivée"
+      },
+      {
+        "etape": 4,
+        "action": "Vérifier si des VERT <360min en attente",
+        "condition": "Si VERT <360min présents et pas de priorités supérieures",
+        "resultat": "Prendre le premier VERT <360min par ordre d'arrivée"
+      },
+      {
+        "etape": 5,
+        "action": "Vérifier si des GRIS en attente",
+        "condition": "Si GRIS présents et pas d'autres priorités",
+        "resultat": "Prendre le premier GRIS par ordre d'arrivée"
+      }
+    ],
+    "texte_complet": "L'algorithme de gestion de la queue suit un ordre strict de priorité avec exception pour les VERT en attente prolongée. Le système vérifie successivement: 1) ROUGE, 2) VERT >360min, 3) JAUNE, 4) VERT <360min, 5) GRIS. Au sein de chaque niveau, principe FIFO (premier arrivé, premier servi)."
+  },
+  {
+    "id": "regle_retour_salle_attente_personnel",
+    "type": "contrainte",
+    "titre": "Retour en Salle d'Attente si Aide-Soignant Indisponible",
+    "regle": "Si AUCUN aide-soignant disponible pour transport direct vers unité, patient retourne impérativement en salle d'attente",
+    "principe": "Cette règle est une règle de SECOURS, appliquée uniquement en l'absence d'aide-soignant disponible",
+    "priorite_normale": "PRIORITÉ: Si un aide-soignant est libre → Transport DIRECT Consultation→Unité (45min)",
+    "conditions_application": [
+      "Patient a terminé sa consultation avec le médecin",
+      "AUCUN aide-soignant disponible pour transport immédiat vers unité",
+      "Patient doit impérativement retourner en salle d'attente (1, 2 ou 3) pour attendre"
+    ],
+    "etape_1_retour_salle": {
+      "description": "Transport Consultation → Salle d'attente",
+      "duree": 5,
+      "responsable": ["Infirmière mobile (B ou C)", "Aide-soignant"],
+      "note": "Dès qu'une infirmière mobile ou un aide-soignant est disponible"
+    },
+    "etape_2_attente_transport_unite": {
+      "description": "Attente en salle avant transport vers unité",
+      "statut_patient": "En attente de personnel pour transport vers unité",
+      "priorite_transport": {
+        "ordre": [
+          "1. ROUGE - Transport prioritaire immédiat dès aide-soignant disponible",
+          "2. JAUNE - Transport urgent dès aide-soignant disponible",
+          "3. VERT - Transport normal dès aide-soignant disponible",
+          "4. GRIS - Transport différé (retour maison)"
+        ],
+        "gravite_critique": "ROUGE doit être transporté en priorité absolue vers son unité"
+      }
+    },
+    "etape_3_transport_unite": {
+      "description": "Transport Salle d'attente → Unité cible",
+      "duree": 45,
+      "responsable": "Aide-soignant uniquement",
+      "note": "Transport effectué dès qu'un aide-soignant se libère, selon priorité de gravité"
+    },
+    "allocation_salle": {
+      "criteres": [
+        "Affecter à une salle avec places disponibles",
+        "Privilégier salle avec surveillance active (infirmière ou aide-soignant présent)",
+        "Respecter capacité maximale des salles (Salle 1: 5 places, Salle 2: 10 places, Salle 3: 5 places)"
+      ]
+    },
+    "surveillance": {
+      "regle": "Patient en attente de transport doit être surveillé",
+      "contrainte": "Respecter règle de surveillance <15min pour toutes les salles"
+    },
+    "texte_complet": "CAS PRIORITAIRE: Si un aide-soignant est disponible après la consultation, le patient est transporté DIRECTEMENT de la Consultation vers son Unité cible (45 minutes). CAS DE SECOURS: Si AUCUN aide-soignant n'est disponible, le processus suivant s'applique: ÉTAPE 1 - Le patient doit impérativement retourner dans une salle d'attente (1, 2 ou 3) selon disponibilité. Ce transport Consultation→Salle prend 5 minutes et est effectué par une infirmière mobile (B ou C) ou un aide-soignant dès que l'un d'eux se libère. ÉTAPE 2 - Le patient attend en salle d'attente avec le statut 'Attente du personnel'. Il doit être surveillé conformément à la règle des 15 minutes. ÉTAPE 3 - Dès qu'un aide-soignant se libère, le patient est transporté vers son unité cible (transport de 45 minutes). L'ordre de priorité pour ce transport final est: ROUGE (priorité absolue), JAUNE, VERT, puis GRIS (retour maison). Cette règle de secours garantit qu'aucun patient ne reste bloqué en consultation même si tous les aide-soignants sont occupés, et que les flux sont gérés selon la gravité."
+  }
+]
