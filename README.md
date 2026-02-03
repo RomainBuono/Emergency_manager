@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/logo.png" alt="Emergency Manager Logo" width="200"/>
+<img src="docs/img/logo.png" alt="Emergency Manager Logo" width="500"/>
 
 ### *Système agentique IA pour les urgences hospitalières*
 
