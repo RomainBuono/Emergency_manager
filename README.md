@@ -892,7 +892,7 @@ Université Lumière Lyon 2 | Année universitaire 2024-2025
 - MBOUP Modou
 
 **Encadrement** :
-- **Professeur** : [Nom du professeur]
+- **Professeurs** : Clovis VARANGOT-REILLE - Ricco RAKOTOMALALA
 - **Université** : Lumière Lyon 2
 - **Formation** : Master 2 SISE - Data Science
 
