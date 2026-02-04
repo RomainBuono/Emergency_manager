@@ -27,6 +27,23 @@ def render_chatbot_premium(
     # CSS Chatbot Premium
     st.markdown(
         """
+        
+        <div class="chatbot-header">
+            <div class="chatbot-header-content">
+                <div class="chatbot-header-left">
+                    <div class="chatbot-icon">💬</div>
+                    <div>
+                        <div class="chatbot-title">AI Assistant</div>
+                        <div class="chatbot-subtitle">Interface complète avec toutes les fonctionnalités</div>
+                    </div>
+                </div>
+                <div class="chatbot-status">
+                    <div class="chatbot-status-dot"></div>
+                    ONLINE
+                </div>
+            </div>
+        </div>
+                
         <style>
         /* Container chatbot */
         .chatbot-container {
@@ -310,11 +327,11 @@ def render_chatbot_premium(
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3, col4 = st.columns(4)
+    col2, col3, col4 = st.columns(3)
 
-    with col1:
-        if st.button("📊 État système", use_container_width=True, key="quick_status"):
-            on_message_callback("Quel est l'état du système ?")
+    # with col1:
+    #     if st.button("📊 État système", use_container_width=True, key="quick_status"):
+    #         on_message_callback("Quel est l'état du système ?")
 
     with col2:
         if st.button(
