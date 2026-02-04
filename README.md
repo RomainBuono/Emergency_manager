@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/img/logo.png" alt="Emergency Manager Logo" width="200"/>
+<img src="docs/img/logo.png" alt="Emergency Manager Logo" width="350" style="display: block; margin: 0 auto; object-fit: contain;"/>
 
 ### *Système agentique IA pour les urgences hospitalières*
 
@@ -892,7 +892,7 @@ Université Lumière Lyon 2 | Année universitaire 2024-2025
 - MBOUP Modou
 
 **Encadrement** :
-- **Professeur** : [Nom du professeur]
+- **Professeurs** : Clovis VARANGOT-REILLE - Ricco RAKOTOMALALA
 - **Université** : Lumière Lyon 2
 - **Formation** : Master 2 SISE - Data Science
 
