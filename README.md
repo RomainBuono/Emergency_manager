@@ -11,7 +11,7 @@
 [![License](https://img.shields.io/badge/License-Académique-lightgrey.svg)]()
 
 *Projet de Master 2 SISE – Data Science*  
-*Université Lumière Lyon 2 | Année 2024–2025*
+*Université Lumière Lyon 2 | Année 2025–2026*
 
 [À propos](#-à-propos) • [Architecture](#️-architecture) • [Fonctionnalités](#-fonctionnalités) • [Technologies](#-technologies-utilisées) • [Installation](#-installation-locale)
 
